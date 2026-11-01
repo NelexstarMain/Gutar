@@ -1,0 +1,77 @@
+// cli.cpp - narzędzie wiersza poleceń: analiza pliku WAV silnikiem C++ i zapis wyniku w JSON.
+// Użycie: gt_cli analyze in.wav out.json [--live] [--no-autotune] [--no-autogate] [--win N]
+#include <chrono>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include "gt_engine.hpp"
+#include "../tools/wavio.hpp"
+
+using namespace gt;
+
+int main(int argc, char** argv) {
+  if (argc < 4 || strcmp(argv[1], "analyze") != 0) {
+    fprintf(stderr, "użycie: gt_cli analyze in.wav out.json [--live] [--no-autotune] [--no-autogate] [--win N]\n");
+    return 2;
+  }
+  EngineConfig cfg;
+  bool live = false;
+  for (int i = 4; i < argc; ++i) {
+    if (!strcmp(argv[i], "--live")) live = true;
+    else if (!strcmp(argv[i], "--no-autotune")) cfg.autoTune = false;
+    else if (!strcmp(argv[i], "--no-autogate")) cfg.autoGate = false;
+    else if (!strcmp(argv[i], "--win") && i + 1 < argc) cfg.win = atoi(argv[++i]);
+    else if (!strcmp(argv[i], "--no-octaves")) cfg.octaves = false;
+    else if (!strcmp(argv[i], "--octratio") && i + 1 < argc) cfg.octRatio = atof(argv[++i]);
+    else if (!strcmp(argv[i], "--extra") && i + 1 < argc) cfg.chord.extraPenalty = (float)atof(argv[++i]);
+    else if (!strcmp(argv[i], "--miss") && i + 1 < argc) cfg.chord.missPenalty = (float)atof(argv[++i]);
+    else if (!strcmp(argv[i], "--bass") && i + 1 < argc) cfg.chord.bassBonus = (float)atof(argv[++i]);
+    else if (!strcmp(argv[i], "--size") && i + 1 < argc) cfg.chord.sizePenalty = (float)atof(argv[++i]);
+    else if (!strcmp(argv[i], "--presence") && i + 1 < argc) cfg.chord.presence = (float)atof(argv[++i]);
+  }
+  std::vector<float> x;
+  int fs = 44100;
+  if (!wavio::read16(argv[2], x, fs)) { fprintf(stderr, "nie można wczytać %s\n", argv[2]); return 1; }
+  const auto t0 = std::chrono::steady_clock::now();
+  Engine eng;
+  eng.configure(cfg);
+  eng.begin(fs);
+  if (!live) eng.prepass(x.data(), x.size());
+  const size_t chunk = live ? 1024 : 8192;
+  for (size_t i = 0; i < x.size(); i += chunk) eng.push(x.data() + i, (int)std::min(chunk, x.size() - i));
+  eng.finish();
+  const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+
+  FILE* f = fopen(argv[3], "w");
+  fprintf(f, "{\"engine\":\"cpp\",\"cpuMs\":%.2f,\"audioSec\":%.3f,\"winSec\":%.4f,\"tuneCents\":%.2f,\"gate\":%.1f,\n\"frames\":[", ms, x.size() / (double)fs,
+          eng.winSec(), eng.tuneCents(), eng.gate());
+  const auto& names = eng.chordNames();
+  bool first = true;
+  for (const auto& fr : eng.frames()) {
+    fprintf(f, "%s{\"t\":%.3f,\"silent\":%s,\"chord\":", first ? "" : ",", fr.t, fr.silent ? "true" : "false");
+    first = false;
+    if (fr.chord >= 0) fprintf(f, "\"%s\"", names[fr.chord].c_str()); else fprintf(f, "null");
+    fprintf(f, ",\"notes\":[");
+    bool fn = true;
+    for (int i = 0; i < fr.nNotes; ++i) {
+      if (!fr.notes[i].stable) continue;
+      fprintf(f, "%s%d", fn ? "" : ",", fr.notes[i].midi);
+      fn = false;
+    }
+    fprintf(f, "],\"tuner\":");
+    if (fr.tunerOk) fprintf(f, "{\"midi\":%d,\"f\":%.4f,\"cents\":%.2f}", fr.tMidi, fr.tF, fr.tCentsSm); else fprintf(f, "null");
+    fprintf(f, "}");
+  }
+  fprintf(f, "],\n\"chordLog\":[");
+  first = true;
+  for (const auto& c : eng.chordLog()) { fprintf(f, "%s{\"t\":%.3f,\"name\":\"%s\"}", first ? "" : ",", c.t, c.name.c_str()); first = false; }
+  fprintf(f, "],\n\"notes\":[");
+  first = true;
+  for (const auto& e : eng.events()) { fprintf(f, "%s{\"midi\":%d,\"t0\":%.3f,\"t1\":%.3f}", first ? "" : ",", e.midi, e.t0, e.t1); first = false; }
+  fprintf(f, "],\n\"onsets\":[");
+  first = true;
+  for (double o : eng.onsets()) { fprintf(f, "%s%.3f", first ? "" : ",", o); first = false; }
+  fprintf(f, "]}\n");
+  fclose(f);
+  return 0;
+}
