@@ -24,7 +24,6 @@ struct State {
   Bytes bin;
   int fs = 44100, synthFs = 0;
   bool synthReady = false;
-  std::map<std::string, std::vector<FretPos>> fingerCache;
   std::vector<NoteEvent2> synthEvents;
 };
 
@@ -53,16 +52,6 @@ void append(std::string& o, const char* fmt, ...) {
   if (n > 0) o.append(buf, (size_t)std::min<int>(n, (int)sizeof buf - 1));
 }
 
-const std::vector<FretPos>& fingerCached(const std::vector<int>& midis) {
-  State& s = S();
-  std::string key = std::to_string(s.cfg.tuning);
-  for (int m : midis) { key += ','; key += std::to_string(m); }
-  auto it = s.fingerCache.find(key);
-  if (it != s.fingerCache.end()) return it->second;
-  if (s.fingerCache.size() > 4000) s.fingerCache.clear();
-  return s.fingerCache[key] = fingerGroup(midis, openStrings());
-}
-
 int finish(const std::string& o) { return (int)o.size(); }
 
 } // namespace
@@ -70,7 +59,7 @@ int finish(const std::string& o) { return (int)o.size(); }
 GT_EXPORT(gt_api_version) int gt_api_version() { return 3; }
 
 GT_EXPORT(gt_config)
-void gt_config(double a4, int win, double gateDb, int mains, int autoTune, int autoGate, int tuning, int octaves) {
+void gt_config(double a4, int win, double gateDb, int mains, int autoTune, int autoGate, int tuning, int octaves, int hand) {
   State& s = S();
   s.cfg.a4 = a4 < 400 || a4 > 480 ? 440 : a4;
   s.cfg.win = (win == 2048 || win == 8192) ? win : 4096;
@@ -80,6 +69,7 @@ void gt_config(double a4, int win, double gateDb, int mains, int autoTune, int a
   s.cfg.autoGate = autoGate != 0;
   s.cfg.tuning = (tuning >= 0 && tuning < kNumTunings) ? tuning : 0;
   s.cfg.octaves = octaves != 0;
+  s.cfg.hand = hand != 0;
   s.eng.configure(s.cfg);
 }
 
@@ -90,7 +80,6 @@ void gt_init(int sampleRate) {
   s.eng.configure(s.cfg);
   s.eng.begin(s.fs);
   s.eng.setRecordLimit((int64_t)s.cfg.recordMaxSec * s.fs);
-  s.fingerCache.clear();
   s.synthReady = false;
 }
 
@@ -191,12 +180,9 @@ int gt_frame_json(int idx) {
   for (int k = 0; k < 2; ++k)
     if (f.alt[k] >= 0) { append(o, "%s\"%s\"", first ? "" : ",", jsonEsc(names[f.alt[k]]).c_str()); first = false; }
   o += "],\"n\":[";
-  std::vector<int> stable, all;
   for (int i = 0; i < f.nNotes; ++i) {
     const FrameNote& n = f.notes[i];
     append(o, "%s[%d,%.2f,%.1f,%.4f,%d]", i ? "," : "", n.midi, n.f, n.cents, n.amp, n.stable ? 1 : 0);
-    all.push_back(n.midi);
-    if (n.stable) stable.push_back(n.midi);
   }
   o += "],\"tu\":";
   if (f.tunerOk) append(o, "[%d,%.2f,%.1f,%.1f,%.2f]", f.tMidi, f.tF, f.tCents, f.tCentsSm, f.tProb);
@@ -204,16 +190,10 @@ int gt_frame_json(int idx) {
   o += ",\"pk\":[";
   for (int i = 0; i < f.nPeaks; ++i) append(o, "%s[%.1f,%.5f]", i ? "," : "", f.pk[i][0], f.pk[i][1]);
   o += "],\"fg\":[";
-  if (!f.silent) {
-    const auto& fg = fingerCached(stable.empty() ? all : stable);
-    first = true;
-    for (const auto& p : fg) {
-      if (p.s < 0) continue;
-      append(o, "%s[%d,%d,%d]", first ? "" : ",", p.midi, p.s + 1, p.f);
-      first = false;
-    }
-  }
-  o += "]}";
+  for (int i = 0; i < f.nFg; ++i) append(o, "%s[%d,%d,%d]", i ? "," : "", f.fg[i].midi, f.fg[i].s + 1, f.fg[i].f);
+  o += "],\"hz\":";
+  if (f.handLo >= 0) append(o, "[%d,%d]", f.handLo, f.handHi); else o += "null";
+  o += ",\"hr\":" + std::to_string((int)f.handRejected) + "}";
   return finish(o);
 }
 

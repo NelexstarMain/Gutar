@@ -26,7 +26,7 @@ async function load(file) {
   const api = {
     x,
     config(o) { x.gt_config(o.a4 || 440, o.win || 4096, o.gate === undefined ? -62 : o.gate, o.mains === undefined ? 50 : o.mains,
-      o.autoTune === false ? 0 : 1, o.autoGate === false ? 0 : 1, o.tuning || 0, o.octaves === false ? 0 : 1); },
+      o.autoTune === false ? 0 : 1, o.autoGate === false ? 0 : 1, o.tuning || 0, o.octaves === false ? 0 : 1, o.hand === false ? 0 : 1); },
     frame(i) { return JSON.parse(text(x.gt_frame_json(i === undefined ? -1 : i))); },
     roll(t0, t1) { return JSON.parse(text(x.gt_roll_json(t0, t1))); },
     summary() { return JSON.parse(text(x.gt_summary_json())); },

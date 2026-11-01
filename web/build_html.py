@@ -22,8 +22,8 @@ src_json = json.dumps(sources, ensure_ascii=False).replace('</', '<\\/')
 
 css, body, app = rd('web', 'style.css'), rd('web', 'body.html'), rd('web', 'app.js')
 fonts = ('<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>'
-         '<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500..800&family=IBM+Plex+Sans:wght@400;500;600'
-         '&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">')
+         '<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500..800&family=Hanken+Grotesk:wght@400;500;600'
+         '&display=swap" rel="stylesheet">')
 scripts = ['<script type="text/plain" id="wasmB64">' + b64 + '</script>',
            '<script type="application/json" id="srcData">' + src_json + '</script>']
 if asm:

@@ -179,8 +179,9 @@ inline std::string tabString(const std::vector<NoteEvent2>& events, const std::v
                              const char* tuningName, double bpm) {
   auto groups = groupNotes(events);
   std::vector<std::vector<int>> gm;
-  for (const auto& g : groups) gm.push_back(g.midis);
-  auto fing = fingerSequence(gm, open);
+  std::vector<double> gt0;
+  for (const auto& g : groups) { gm.push_back(g.midis); gt0.push_back(g.t0); }
+  auto fing = fingerSequence(gm, gt0, open);
   std::string out = "# Tabulatura (Gitara Słuchacz)\n# Strój: ";
   out += tuningName;
   char hb[64];
@@ -250,8 +251,9 @@ inline std::string sessionJson(const std::vector<NoteEvent2>& events, const std:
                                const char* tuningName, const int open[6], double bpm, double duration, double tuneCents, int sampleRate) {
   auto groups = groupNotes(events);
   std::vector<std::vector<int>> gm;
-  for (const auto& g : groups) gm.push_back(g.midis);
-  auto fing = fingerSequence(gm, open);
+  std::vector<double> gt0;
+  for (const auto& g : groups) { gm.push_back(g.midis); gt0.push_back(g.t0); }
+  auto fing = fingerSequence(gm, gt0, open);
   std::map<std::pair<size_t, int>, FretPos> byGroup; // (grupa, midi) -> pozycja
   for (size_t g = 0; g < fing.size(); ++g) for (const auto& p : fing[g]) byGroup[{g, p.midi}] = p;
   auto groupOf = [&](double t0) {

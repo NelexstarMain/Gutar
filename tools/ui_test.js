@@ -19,7 +19,7 @@ const until = async (page, fn, t = 30000) => { await page.waitForFunction(fn, nu
   page.on('pageerror', e => errors.push('pageerror: ' + e.message));
   await page.goto(URL);
   await until(page, () => window.__gs && window.__gs.S.mode === 'review');
-  ok(true, 'silnik załadowany: ' + await page.textContent('#engTag'));
+  ok(true, 'silnik załadowany: ' + await page.evaluate(() => window.__gs.E.kind + ' ' + Math.round(window.__gs.E.wasmBytes / 1024) + ' KB'));
   ok((await page.textContent('#chord')) !== '—', 'przykład otwiera się z widocznym akordem: ' + await page.textContent('#chord'));
   await page.waitForTimeout(500);
   await page.screenshot({ path: path.join(out, 'desktop-dark.png'), fullPage: true });
@@ -34,6 +34,7 @@ const until = async (page, fn, t = 30000) => { await page.waitForFunction(fn, nu
   await page.click('#btnStop');
 
   const dl = async (sel, ext) => {
+    if (sel !== '#dlZip') await page.click('#menu > summary');
     const [d] = await Promise.all([page.waitForEvent('download', { timeout: 60000 }), page.click(sel)]);
     const p = path.join(out, d.suggestedFilename()); await d.saveAs(p);
     ok(d.suggestedFilename().endsWith(ext) && fs.statSync(p).size > 20, 'pobrano ' + d.suggestedFilename() + ' (' + fs.statSync(p).size + ' B)');
@@ -52,7 +53,7 @@ const until = async (page, fn, t = 30000) => { await page.waitForFunction(fn, nu
   await page.waitForTimeout(300);
   await page.screenshot({ path: path.join(out, 'desktop-file.png'), fullPage: true });
   // zmiana ustawień powoduje ponowną analizę
-  await page.click('#settingsBox > summary');
+  await page.click('#btnSettings');
   await page.selectOption('#win', '2048');
   await page.waitForTimeout(1500);
   await until(page, () => window.__gs.S.mode === 'review', 60000);
@@ -91,12 +92,13 @@ const until = async (page, fn, t = 30000) => { await page.waitForFunction(fn, nu
   });
   await page.goto(URL);
   await until(page, () => window.__gs && window.__gs.S.mode === 'review', 90000);
-  ok(/asm\.js/.test(await page.textContent('#engTag')), 'WebAssembly zablokowany -> działa rezerwa: ' + await page.textContent('#engTag'));
+  const kind = await page.evaluate(() => window.__gs.E.kind);
+  ok(kind === 'asm.js', 'WebAssembly zablokowany -> działa rezerwa: ' + kind);
   ok((await page.textContent('#chord')) !== '—', 'rezerwa asm.js rozpoznaje akord: ' + await page.textContent('#chord'));
   await page.waitForTimeout(300);
   ok(!(await page.isHidden('#micHint')), 'w artefakcie widać wyjaśnienie o mikrofonie');
-  await page.click('#dlMid'); await page.waitForTimeout(800);
-  await page.click('#dlTab'); await page.waitForTimeout(800);
+  await page.click('#menu > summary'); await page.click('#dlMid'); await page.waitForTimeout(800);
+  await page.click('#menu > summary'); await page.click('#dlTab'); await page.waitForTimeout(800);
   const saved = await page.evaluate(() => window.__saved);
   ok(saved.some(s => s.filename === 'gitara.mid.zip'), 'MIDI w artefakcie spakowane do ZIP (rozszerzenie spoza listy): ' + JSON.stringify(saved));
   ok(saved.some(s => s.filename === 'gitara-tabulatura.txt'), 'tabulatura zapisana bezpośrednio jako .txt');

@@ -5,6 +5,7 @@
 #include <cstring>
 #include <string>
 #include "gt_chords.hpp"
+#include "gt_hand.hpp"
 #include "gt_tracker.hpp"
 
 namespace gt {
@@ -31,6 +32,8 @@ struct EngineConfig {
   bool autoTune = true;    // automatyczna korekta stroju odniesienia
   bool autoGate = true;    // automatyczne podniesienie progu przy szumie
   bool octaves = true;     // wykrywanie oktawowych podwojeń
+  bool hand = true;        // śledzenie ręki: odrzucaj nuty niemożliwe do zagrania razem
+  bool handMotion = true;  // ... także skoki ręki szybsze, niż ręka zdąży
   double octRatio = 2.0;
   int tuning = 0;          // indeks w kTunings
   int recordMaxSec = 1200; // limit nagrania w pamięci
@@ -47,6 +50,10 @@ struct FrameRec {
   int16_t alt[2] = {-1, -1};
   uint8_t nNotes = 0, nPeaks = 0;
   FrameNote notes[8];
+  uint8_t nFg = 0;
+  struct { int16_t midi; int8_t s, f; } fg[6];
+  int8_t handLo = -1, handHi = -1;
+  uint8_t handRejected = 0;  // ile nut odrzucono w tej ramce jako niemożliwe do zagrania
   bool tunerOk = false;
   int16_t tMidi = 0;
   float tF = 0, tCents = 0, tCentsSm = 0, tProb = 0;
@@ -64,6 +71,7 @@ public:
     if (!ready_) return;
     if (rebuild) setupWindow();
     mp_.setRange(kTunings[cfg_.tuning].open[0], kTunings[cfg_.tuning].open[5] + 24);
+    hand_.configure(kTunings[cfg_.tuning].open, cfg_.hand, cfg_.handMotion);
     setReference(cfg_.a4 * std::pow(2.0, tuneCents_ / 1200.0));
   }
   const EngineConfig& config() const { return cfg_; }
@@ -87,6 +95,7 @@ public:
     onset_.init(fsd_);
     dec_.init(D_);
     tracker_.reset();
+    hand_.reset();
     frames_.clear(); chordNames_.clear(); chordLog_.clear(); onsets_.clear();
     recording_.clear();
     nd_ = 0; sinceFrame_ = 0; pendingOnset_ = -1; lastOnset_ = -1;
@@ -169,6 +178,7 @@ public:
   double fsDecimated() const { return fsd_; }
   int sampleRate() const { return fs_; }
   double tuneCents() const { return tuneCents_; }
+  long handRejected() const { return hand_.rejected(); }
   double gate() const { return gateEff_; }
   const std::vector<FrameRec>& frames() const { return frames_; }
   const std::vector<std::string>& chordNames() const { return chordNames_; }
@@ -206,6 +216,7 @@ private:
   Spectrum spec_;
   MultiPitch mp_;
   NoteTracker tracker_;
+  HandTracker hand_;
   std::vector<float> decOut_, xbuf_;
   std::vector<double> onsetTmp_, onsets_;
   std::vector<Peak> peaks_;
@@ -361,6 +372,10 @@ private:
     } else if (!cfg_.autoGate) gateEff_ = cfg_.gateDb;
     const bool silent = levelDb < gateEff_;
     fr.silent = silent;
+    const double onsetT = pendingOnset_;
+    pendingOnset_ = -1;
+    fr.onset = onsetT >= 0;
+    if (onsetT >= 0) lastOnset_ = onsetT;
     dets_.clear(); peaks_.clear();
     if (!silent) {
       spec_.compute(xbuf_.data());
@@ -370,11 +385,11 @@ private:
       spec_.pickPeaks(po, peaks_);
       if (cfg_.autoTune && !prepassed_) liveTuning();
       mp_.detect(peaks_, dets_);
+      fr.handRejected = (uint8_t)std::min(255, hand_.filter(dets_, t, lastOnset_ < 0 ? 1e9 : t - lastOnset_, wSec));
+#ifdef GT_DEBUG
+      if (!hand_.lastRej.empty() && std::getenv("GT_TRACE_HAND")) { fprintf(stderr, "HAND t=%.3f rej:", t); for (int m : hand_.lastRej) fprintf(stderr, " %d", m); fprintf(stderr, " | kept:"); for (const auto& d : dets_) fprintf(stderr, " %d", d.midi); fprintf(stderr, "\n"); }
+#endif
     }
-    const double onsetT = pendingOnset_;
-    pendingOnset_ = -1;
-    fr.onset = onsetT >= 0;
-    if (onsetT >= 0) lastOnset_ = onsetT;
     tracker_.update(t, dets_, silent, onsetT, hopSec, wSec);
 
     // stabilne = wykryte teraz i w poprzedniej ramce (albo aktywne w trackerze)
@@ -389,6 +404,17 @@ private:
     prevStable_ = cur;
     prevSilent_ = silent;
 
+    // ręka: ułożenie palców dla stabilnych nut i strefa na gryfie
+    if (!silent) {
+      std::vector<int> hm;
+      for (const auto* n : stable) hm.push_back(n->midi);
+      if (hm.empty()) for (const auto& n : dets_) hm.push_back(n.midi);
+      std::vector<FretPos> fgp;
+      hand_.observe(hm, t, fgp);
+      for (const auto& p : fgp) if (p.s >= 0 && fr.nFg < 6) { fr.fg[fr.nFg].midi = (int16_t)p.midi; fr.fg[fr.nFg].s = (int8_t)p.s; fr.fg[fr.nFg].f = (int8_t)p.f; ++fr.nFg; }
+      const auto z = hand_.zone();
+      fr.handLo = (int8_t)z.lo; fr.handHi = (int8_t)z.hi;
+    }
     updateChord(fr, t, hopSec, wSec, onsetT, silent, stable);
     updateTuner(fr, t, silent);
 

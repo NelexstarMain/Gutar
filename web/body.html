@@ -3,142 +3,93 @@
   <header class="top">
     <div class="brand">
       <svg class="logo" viewBox="0 0 48 48" role="img" aria-label="G++">
-        <rect x="1.5" y="1.5" width="45" height="45" rx="11" fill="var(--panel-solid)" stroke="var(--cpp)" stroke-width="2"/>
-        <text x="24" y="31" text-anchor="middle" font-family="JetBrains Mono, ui-monospace, monospace" font-weight="800" font-size="21" fill="var(--cpp)">G++</text>
-        <path d="M7 38 H41" stroke="var(--brass)" stroke-width="2" stroke-linecap="round"/>
+        <rect x="1.5" y="1.5" width="45" height="45" rx="12" fill="var(--surface)" stroke="var(--hair-2)" stroke-width="1.5"/>
+        <text x="24" y="30" text-anchor="middle" font-family="Bricolage Grotesque, system-ui, sans-serif" font-weight="700" font-size="19" fill="var(--ink)">G++</text>
+        <path d="M9 37h30" stroke="var(--emph)" stroke-width="2.2" stroke-linecap="round"/>
       </svg>
-      <div>
-        <h1>Gitara Słuchacz</h1>
-        <p class="sub">nuty, akordy i stroik na żywo · silnik <b>C++17</b> w <span id="subKind">WebAssembly</span></p>
-      </div>
+      <div><h1>Gitara Słuchacz</h1><p id="sub" title="">silnik C++ w przeglądarce</p></div>
     </div>
-    <div class="tags">
-      <span id="engTag" class="pill cpp">C++ ładuje się…</span>
-      <span id="status" class="pill" role="status" aria-live="polite">wyłączony</span>
+    <div class="actions">
+      <button id="btnMic" class="solid"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>Mikrofon</button>
+      <button id="btnDemo">Demo</button>
+      <label class="btn" for="file">Plik audio</label>
+      <input type="file" id="file" accept="audio/*,.wav,.mp3,.m4a,.ogg,.flac" hidden>
+      <button id="btnStop" disabled aria-label="Stop"><svg class="ic" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>Stop</button>
+      <button id="btnSettings" class="icon" aria-label="Ustawienia" aria-expanded="false"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></svg></button>
+      <span id="status" class="status" role="status" aria-live="polite">gotowy</span>
     </div>
   </header>
 
-  <section class="panel" id="controls" aria-label="Źródło dźwięku">
-    <div class="row">
-      <button id="btnMic" class="primary"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>Mikrofon</button>
-      <button id="btnDemo"><svg class="ic" viewBox="0 0 24 24" fill="currentColor"><path d="M7 5v14l12-7z"/></svg>Demo</button>
-      <label class="btn" for="file"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 16V4m0 0L7 9m5-5 5 5M5 20h14"/></svg>Wgraj plik audio</label>
-      <input type="file" id="file" accept="audio/*,.wav,.mp3,.m4a,.ogg,.flac" hidden>
-      <button id="btnStop" disabled><svg class="ic" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>Stop</button>
-    </div>
-    <div id="micHint" class="hint" hidden></div>
-    <div class="prog" id="prog"><i id="progBar"></i></div>
-    <details class="settings" id="settingsBox">
-      <summary>ustawienia silnika i test szumu</summary>
-      <div class="set">
-        <label class="f">Strój gitary<select id="tuning"></select></label>
-        <label class="f">Okno analizy<select id="win"><option value="2048">Szybkie · 186 ms</option><option value="4096" selected>Dokładne · 372 ms</option><option value="8192">Maksymalne · 743 ms</option></select></label>
-        <label class="f">Kamerton A4 (Hz)<input type="number" id="a4" value="440" min="415" max="466" step="0.5"></label>
-        <label class="f">Filtr brumu sieci<select id="mains"><option value="50">50 Hz (Europa)</option><option value="60">60 Hz (USA)</option><option value="0">wyłączony</option></select></label>
-        <label class="f">Próg ciszy: <b id="gateV">-62 dB</b><input type="range" id="gate" min="-80" max="-40" value="-62"></label>
-        <label class="f chk"><input type="checkbox" id="autoTune" checked>Auto-strój: dopasuj do rozstrojonej gitary</label>
-        <label class="f chk"><input type="checkbox" id="autoGate" checked>Auto-próg: podnieś próg przy szumie tła</label>
-        <label class="f chk"><input type="checkbox" id="octaves" checked>Wykrywaj oktawowe podwojenia (E2+E3)</label>
-        <label class="f">Szum testowy (dodawany do analizy)<select id="nzType"><option value="none">brak</option><option value="white">biały</option><option value="pink">różowy</option><option value="hum">brum sieciowy</option><option value="mix">mieszany</option></select></label>
-        <label class="f">Poziom szumu: <b id="nzV">-40 dBFS</b><input type="range" id="nzLvl" min="-70" max="-10" value="-40"></label>
-      </div>
-      <p class="note" id="snrNote"></p>
-    </details>
-  </section>
+  <div class="prog" id="prog"><i id="progBar"></i></div>
+  <p id="micHint" class="hint" hidden></p>
+  <div class="settings" id="settings" hidden>
+    <label class="f">Strój gitary<select id="tuning"></select></label>
+    <label class="f">Okno analizy<select id="win"><option value="2048">Szybkie, 186 ms</option><option value="4096" selected>Dokładne, 372 ms</option><option value="8192">Maksymalne, 743 ms</option></select></label>
+    <label class="f">Kamerton A4 (Hz)<input type="number" id="a4" value="440" min="415" max="466" step="0.5"></label>
+    <label class="f">Brum sieci<select id="mains"><option value="50">50 Hz</option><option value="60">60 Hz</option><option value="0">wyłączony</option></select></label>
+    <label class="f">Próg ciszy <b id="gateV">-62 dB</b><input type="range" id="gate" min="-80" max="-40" value="-62"></label>
+    <label class="f chk"><input type="checkbox" id="autoTune" checked>Dopasuj do rozstrojonej gitary</label>
+    <label class="f chk"><input type="checkbox" id="autoGate" checked>Podnieś próg przy szumie tła</label>
+    <label class="f chk"><input type="checkbox" id="hand" checked>Śledź rękę (odrzuć nuty niemożliwe do zagrania)</label>
+    <label class="f chk"><input type="checkbox" id="octaves" checked>Wykrywaj oktawowe podwojenia</label>
+    <label class="f">Szum testowy<select id="nzType"><option value="none">brak</option><option value="white">biały</option><option value="pink">różowy</option><option value="hum">brum sieciowy</option><option value="mix">mieszany</option></select></label>
+    <label class="f">Poziom szumu <b id="nzV">-40 dBFS</b><input type="range" id="nzLvl" min="-70" max="-10" value="-40"></label>
+  </div>
 
-  <main class="grid">
-    <section class="panel" aria-label="Akord">
-      <h2>akord</h2>
+  <section class="sec now" aria-label="Teraz">
+    <div>
       <div id="chord" class="chord dim" aria-live="polite">—</div>
       <div id="alt" class="alt"></div>
       <div id="chips" class="chips"></div>
-      <div class="meter"><i id="lvl"></i><u id="gateMark"></u></div>
-      <div class="meter-l"><span>poziom</span><span id="lvlTxt">-- dB</span></div>
-    </section>
-
-    <section class="panel" aria-label="Stroik">
-      <h2>stroik</h2>
-      <div class="tuner-top"><div class="tnote" id="tNote">—</div><div class="tinfo" id="tInfo">zagraj pojedynczy dźwięk</div></div>
-      <svg class="gauge" id="gauge" viewBox="0 0 300 176" role="img" aria-label="Wskaźnik stroju w centach">
-        <path class="zone" id="zoneArc"/>
-        <path class="arc" id="gArc"/>
+    </div>
+    <div class="tuner" aria-label="Stroik">
+      <div class="t-row"><div class="t-note" id="tNote">—</div><div class="t-read"><div id="tHz">&nbsp;</div><div class="t-state" id="tState">zagraj jedną strunę</div></div></div>
+      <svg class="gauge" id="gauge" viewBox="0 0 300 48" role="img" aria-label="Odchyłka od stroju w centach">
+        <rect class="zone" id="zone" x="0" y="8" width="0" height="20"/>
         <g id="gTicks"></g>
-        <line class="needle" id="needle" x1="150" y1="150" x2="150" y2="46"/>
-        <circle class="hub" cx="150" cy="150" r="9"/>
-        <text x="150" y="172">¢ cent</text>
+        <path class="mark" id="mark" d="M-6 0h12l-6 12z" style="transform:translate(150px,2px)"/>
       </svg>
       <div class="strings" id="strRow"></div>
-    </section>
+    </div>
+    <div class="analyzer"><canvas id="an" height="104" role="img" aria-label="Poziom sygnału i widmo"></canvas></div>
+  </section>
 
-    <section class="panel wide" aria-label="Gryf">
-      <h2>gryf <span class="note" id="neckNote">palcowanie dla wykrytych dźwięków</span></h2>
-      <canvas id="neck" height="210"></canvas>
-    </section>
+  <section class="sec neck" aria-label="Gryf"><canvas id="neck" height="204" role="img" aria-label="Gryf z palcowaniem wykrytych dźwięków"></canvas></section>
 
-    <section class="panel wide" aria-label="Zapis nut">
-      <h2>zapis nut <span class="note" id="rollNote">ostatnie 12 s</span></h2>
-      <div class="transport" id="transport" hidden>
-        <button id="btnPlay"><svg class="ic" viewBox="0 0 24 24" fill="currentColor"><path d="M7 5v14l12-7z"/></svg><span id="playTxt">Odtwórz</span></button>
-        <div class="seg" role="group" aria-label="Co odtwarzać">
-          <button id="pmOrig" aria-pressed="true">Nagranie</button>
-          <button id="pmTr" aria-pressed="false">Transkrypcja</button>
-          <button id="pmBoth" aria-pressed="false">Oba</button>
-        </div>
-        <input type="range" id="scrub" min="0" max="1000" value="0" aria-label="Pozycja w nagraniu">
-        <span class="time" id="timeTxt">0:00.0 / 0:00.0</span>
+  <section class="sec" aria-label="Oś czasu">
+    <div class="bar" id="bar">
+      <button id="btnPlay" class="solid" disabled><svg class="ic" viewBox="0 0 24 24" fill="currentColor"><path d="M7 5v14l12-7z"/></svg><span id="playTxt">Odtwórz</span></button>
+      <div class="seg" role="group" aria-label="Co odtwarzać">
+        <button id="pmOrig" aria-pressed="true">Nagranie</button><button id="pmTr" aria-pressed="false">Transkrypcja</button><button id="pmBoth" aria-pressed="false">Oba</button>
       </div>
-      <canvas id="roll" height="270"></canvas>
-      <canvas id="ov" height="54" style="margin-top:8px" hidden></canvas>
-      <div class="legend"><span>pionowe linie = wykryte uderzenia</span><span>kolor = klasa dźwięku</span><span id="ovHint" hidden>kliknij pasek, żeby przeskoczyć</span></div>
-    </section>
+      <span class="time" id="timeTxt"></span>
+      <span class="grow"></span>
+      <div class="seg" role="group" aria-label="Widok"><button id="vwChart" aria-pressed="true">Wykres</button><button id="vwTable" aria-pressed="false">Tabela</button></div>
+    </div>
+    <div class="tl" id="tl">
+      <canvas id="roll" height="318" tabindex="0" role="img" aria-label="Zapis nut. Strzałki przewijają, spacja odtwarza."></canvas>
+      <div class="tip" id="tip" hidden></div>
+      <div class="tbl-wrap" id="tblWrap" hidden><table><thead><tr><th>Czas</th><th>Nuta</th><th>Długość</th><th>Siła</th></tr></thead><tbody id="tblBody"></tbody></table></div>
+    </div>
+    <div class="cstrip" id="cstrip"></div>
+  </section>
 
-    <section class="panel" aria-label="Widmo">
-      <h2>widmo i alikwoty</h2>
-      <canvas id="spec" height="200"></canvas>
-    </section>
-
-    <section class="panel" aria-label="Silnik C++">
-      <h2>silnik c++</h2>
-      <div class="stats">
-        <div class="stat"><small>moduł</small><b id="stMod">—</b></div>
-        <div class="stat"><small>ramka analizy</small><b id="stFrame">—</b></div>
-        <div class="stat"><small>strój odniesienia</small><b id="stTune">0.0 ¢</b></div>
-        <div class="stat"><small>próg ciszy</small><b id="stGate">—</b></div>
+  <section class="sec dl" aria-label="Pobieranie">
+    <button id="dlZip" class="solid" disabled><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 4v11m0 0-4-4m4 4 4-4M5 20h14"/></svg>Pobierz całość</button>
+    <details class="menu" id="menu">
+      <summary class="btn" aria-label="Więcej formatów">Więcej formatów</summary>
+      <div class="menu-list">
+        <button id="dlWav">Nagranie<small>.wav</small></button>
+        <button id="dlMid">Nuty<small>.mid</small></button>
+        <button id="dlTr">Transkrypcja<small>.wav</small></button>
+        <button id="dlTab">Tabulatura<small>.txt</small></button>
+        <button id="dlChords">Akordy<small>.txt</small></button>
+        <button id="dlJson">Sesja<small>.json</small></button>
+        <button id="cpTab">Kopiuj tabulaturę<small>schowek</small></button>
+        <button id="dlSrc">Kod C++<small>.zip</small></button>
+        <button id="dlApp" hidden>Aplikacja z mikrofonem<small>.html</small></button>
       </div>
-      <div class="console" id="console" aria-hidden="true"></div>
-    </section>
-
-    <section class="panel" aria-label="Historia akordów">
-      <h2>historia akordów</h2>
-      <div class="log" id="log"></div>
-    </section>
-
-    <section class="panel" aria-label="Pobieranie">
-      <h2>pobieranie <span class="note" id="dlNote"></span></h2>
-      <div class="exports">
-        <button id="dlZip" class="primary full"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 4v11m0 0-4-4m4 4 4-4M5 20h14"/></svg><span>Pobierz całość (.zip)<small>nagranie WAV + MIDI + tabulatura + akordy + sesja + odsłuch transkrypcji</small></span></button>
-        <button id="dlWav"><span>Nagranie (.wav)<small>całe zagrane nagranie</small></span></button>
-        <button id="dlMid"><span>MIDI (.mid)<small>nuty + znaczniki akordów</small></span></button>
-        <button id="dlTr"><span>Transkrypcja (.wav)<small>wykryte nuty zagrane syntezatorem</small></span></button>
-        <button id="dlTab"><span>Tabulatura (.txt)<small>struny i progi</small></span></button>
-        <button id="dlChords"><span>Akordy (.txt)<small>lista z czasami</small></span></button>
-        <button id="dlJson"><span>Sesja (.json)<small>nuty, struny, progi, akordy</small></span></button>
-        <button id="dlSrc"><span>Kod C++ (.zip)<small>cały silnik, do zbudowania</small></span></button>
-        <button id="dlApp" hidden><span>Aplikacja (.html)<small>jeden plik, działa offline, z mikrofonem</small></span></button>
-        <button id="cpTab"><span>Kopiuj tabulaturę<small>do schowka</small></span></button>
-      </div>
-    </section>
-
-    <section class="panel wide" aria-label="Kod źródłowy">
-      <h2>kod źródłowy c++ <span class="note" id="srcInfo"></span></h2>
-      <div class="tabs" id="srcTabs" role="tablist"></div>
-      <pre class="code" id="srcView" tabindex="0"><code></code></pre>
-    </section>
-  </main>
-
-  <footer>
-    Całe przetwarzanie dzieje się lokalnie w przeglądarce, dźwięk nigdzie nie jest wysyłany. Do mikrofonu wyłączone są automatyczne korekcje (AGC, redukcja szumu, echo), bo psują muzykę.
-    Najlepiej działa gitara akustyczna lub elektryczna przez interfejs. Nagranie, MIDI i tabulatura powstają w silniku C++ skompilowanym do WebAssembly.
-  </footer>
+    </details>
+  </section>
 </div>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
