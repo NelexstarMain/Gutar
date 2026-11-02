@@ -15,6 +15,10 @@ Metryki:
   tune_ok     % ramek stroika z poprawnym dźwiękiem (pojedyncza nuta)
   tune_cov    % ramek z pojedynczą nutą, dla których stroik coś pokazał
   tune_err    mediana |błąd| częstotliwości stroika [centy]
+  cov         średnie pokrycie słyszalnego czasu nuty przez wykryte nuty tej wysokości [%]
+  cov80       % nut pokrytych w co najmniej 80% (ogon nie obcięty)
+  frag        średnia liczba kawałków, na które pocięto jedną nutę (1 = bez przerw)
+  over        średnie przedłużenie ponad koniec nuty [s]
 """
 import json, os, sys, glob, math, statistics as st
 from collections import defaultdict
@@ -114,6 +118,24 @@ def score_file(truth, res):
                         ok += 1; errs.append(abs(1200 * math.log2(tu['f'] / act[0]['f'])))
             g += 0.05
         out['tune'] = (ok, cov, tot, errs)
+    # --- podtrzymanie: jaką część słyszalnego czasu nuty pokrywają wykryte nuty tej wysokości i na ile kawałków je pocięto
+    cov = []; frag = []; over = []
+    for n in truth['notes']:
+        ta = n.get('ta')
+        if ta is None or ta - n['t0'] < 0.5: continue
+        pieces = [(max(e['t0'], n['t0']), min(e['t1'], ta)) for e in res['notes']
+                  if e['midi'] == n['midi'] and e['t1'] > n['t0'] and e['t0'] < ta and e['t0'] > n['t0'] - 0.15]
+        pieces = [p for p in pieces if p[1] > p[0]]
+        if not pieces: cov.append(0.0); frag.append(0); continue
+        pieces.sort(); tot = 0.0; cur = pieces[0]
+        for p in pieces[1:]:
+            if p[0] <= cur[1]: cur = (cur[0], max(cur[1], p[1]))
+            else: tot += cur[1] - cur[0]; cur = p
+        tot += cur[1] - cur[0]
+        cov.append(min(1.0, tot / (ta - n['t0']))); frag.append(len(pieces))
+        for e in res['notes']:
+            if e['midi'] == n['midi'] and abs(e['t0'] - n['t0']) < 0.15: over.append(max(0.0, e['t1'] - max(ta, n['t1'])))
+    out['sustain'] = (cov, frag, over)
     out['rtf'] = res['cpuMs'] / 1000.0 / res['audioSec']
     return out
 
@@ -147,9 +169,13 @@ def main():
             d['tune_ok'] = 100 * ok / max(1, tot); d['tune_cov'] = 100 * cov / max(1, tot)
             errs = [e for r in rows if 'tune' in r for e in r['tune'][3]]
             d['tune_err'] = st.median(errs) if errs else float('nan')
+        cov = [x for r in rows for x in r['sustain'][0]]; frag = [x for r in rows for x in r['sustain'][1] if x > 0]; over = [x for r in rows for x in r['sustain'][2]]
+        if cov:
+            d['cov'] = 100 * sum(cov) / len(cov); d['cov80'] = 100 * sum(1 for c in cov if c >= 0.8) / len(cov)
+            d['frag'] = sum(frag) / len(frag) if frag else float('nan'); d['over'] = sum(over) / len(over) if over else 0.0
         d['rtf'] = sum(r['rtf'] for r in rows) / len(rows)
         return d
-    cols = ['chord_seg', 'chord_root', 'chord_frm', 'chord_lat', 'flicker', 'note_f1', 'pc_f1', 'onset_f1', 'tune_ok', 'tune_cov', 'tune_err', 'rtf']
+    cols = ['chord_seg', 'chord_root', 'chord_frm', 'chord_lat', 'flicker', 'note_f1', 'pc_f1', 'onset_f1', 'tune_ok', 'tune_cov', 'tune_err', 'cov', 'cov80', 'frag', 'over', 'rtf']
     print('%-16s' % 'grupa' + ''.join('%11s' % c for c in cols))
     allrows = []
     for k in sorted(groups):

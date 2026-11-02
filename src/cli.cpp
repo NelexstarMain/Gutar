@@ -23,6 +23,12 @@ int main(int argc, char** argv) {
     else if (!strcmp(argv[i], "--win") && i + 1 < argc) cfg.win = atoi(argv[++i]);
     else if (!strcmp(argv[i], "--no-octaves")) cfg.octaves = false;
     else if (!strcmp(argv[i], "--no-hand")) cfg.hand = false;
+    else if (!strcmp(argv[i], "--no-sustain")) cfg.sustain = false;
+    else if (!strcmp(argv[i], "--endlag") && i + 1 < argc) cfg.endLag = atof(argv[++i]);
+    else if (!strcmp(argv[i], "--release") && i + 1 < argc) cfg.release = atof(argv[++i]);
+    else if (!strcmp(argv[i], "--susev") && i + 1 < argc) cfg.susEvidence = atof(argv[++i]);
+    else if (!strcmp(argv[i], "--susk") && i + 1 < argc) cfg.susK = atof(argv[++i]);
+    else if (!strcmp(argv[i], "--sushold") && i + 1 < argc) cfg.susHold = atof(argv[++i]);
     else if (!strcmp(argv[i], "--no-hand-motion")) cfg.handMotion = false;
     else if (!strcmp(argv[i], "--octratio") && i + 1 < argc) cfg.octRatio = atof(argv[++i]);
     else if (!strcmp(argv[i], "--extra") && i + 1 < argc) cfg.chord.extraPenalty = (float)atof(argv[++i]);

@@ -69,14 +69,14 @@ const S = {
 };
 
 // ------------------------------------------------------------------ ustawienia
-const SET_KEYS = ['tuning', 'win', 'a4', 'mains', 'gate', 'autoTune', 'autoGate', 'hand', 'octaves', 'nzType', 'nzLvl'];
+const SET_KEYS = ['tuning', 'win', 'a4', 'mains', 'gate', 'sustain', 'autoTune', 'autoGate', 'hand', 'octaves', 'nzType', 'nzLvl'];
 const readSet = () => ({
-  tuning: +$('tuning').value || 0, win: +$('win').value, a4: +$('a4').value || 440, mains: +$('mains').value, gate: +$('gate').value,
+  tuning: +$('tuning').value || 0, win: +$('win').value, sustain: +$('sustain').value, a4: +$('a4').value || 440, mains: +$('mains').value, gate: +$('gate').value,
   autoTune: $('autoTune').checked, autoGate: $('autoGate').checked, hand: $('hand').checked, octaves: $('octaves').checked,
 });
 function pushCfg() {
   const s = readSet();
-  E.x.gt_config(s.a4, s.win, s.gate, s.mains, s.autoTune ? 1 : 0, s.autoGate ? 1 : 0, s.tuning, s.octaves ? 1 : 0, s.hand ? 1 : 0);
+  E.x.gt_config(s.a4, s.win, s.gate, s.mains, s.autoTune ? 1 : 0, s.autoGate ? 1 : 0, s.tuning, s.octaves ? 1 : 0, s.hand ? 1 : 0, s.sustain);
   S.tuning = s.tuning;
 }
 let reTimer = 0;

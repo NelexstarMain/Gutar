@@ -117,7 +117,7 @@ inline void applyBody(std::vector<float>& mix, int fs) {
 
 // Dodaje nuty do bufora `out` (o długości `n` próbek). Zwraca rzeczywiste f0 każdej nuty (do testów).
 inline std::vector<double> renderNotes(float* out, size_t n, int fs, const std::vector<NoteEvent>& ev,
-                                       const SynthOptions& o) {
+                                       const SynthOptions& o, std::vector<double>* audibleEnd = nullptr) {
   Rng r(o.seed);
   std::vector<double> freqs;
   freqs.reserve(ev.size());
@@ -137,10 +137,11 @@ inline std::vector<double> renderNotes(float* out, size_t n, int fs, const std::
     const double amp = o.gain * std::pow((double)e.vel, 1.3);
     const double glide = o.varied ? r.uni(0, 18) * e.vel : 6.0 * e.vel;
     const int64_t n0 = (int64_t)std::llround(e.t0 * fs);
-    if (n0 >= (int64_t)n) continue;
+    if (n0 >= (int64_t)n) { if (audibleEnd) audibleEnd->push_back(e.t0); continue; }
     const int64_t nRel = (int64_t)std::llround(std::max(e.t1, e.t0 + 0.05) * fs);
     const int64_t nEnd = std::min<int64_t>((int64_t)n, std::min<int64_t>(nRel + (int64_t)(0.06 * fs), n0 + (int64_t)(tau1 * 9.2 * fs)));
-    if (nEnd <= n0) continue;
+    if (nEnd <= n0) { if (audibleEnd) audibleEnd->push_back(e.t0); continue; }
+    double domA = -1, domTau = tau1;
     for (int h = 1; h <= o.maxPartials; ++h) {
       const double fh = h * f0 * std::sqrt(1 + B * h * h);
       if (fh > 0.45 * fs || fh > 9000) break;
@@ -149,6 +150,7 @@ inline std::vector<double> renderNotes(float* out, size_t n, int fs, const std::
       a *= amp * 2;
       if (a < amp * 2 * o.minRel) continue;
       const double tau = tau1 / (1 + kdec * (h - 1));
+      if (a > domA) { domA = a; domTau = tau; }
       const double ph = r.uni(0, 2 * kPi);
       if (o.varied && h <= 8) {
         const double eps = r.uni(0.1, 0.35), d = r.uni(0.05, 0.9);
@@ -158,6 +160,7 @@ inline std::vector<double> renderNotes(float* out, size_t n, int fs, const std::
         detail::addPartial(dst, n0, nEnd, nRel, fs, fh, a, tau, ph, h == 1 ? glide : glide * 0.5, 0.09);
       }
     }
+    if (audibleEnd) audibleEnd->push_back(std::min(e.t1, e.t0 + domTau * std::log(100.0))); // -40 dB dominującego alikwotu
     // krótki szum szarpnięcia
     const int64_t nb = (int64_t)(0.006 * fs);
     double lp = 0;

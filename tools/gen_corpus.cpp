@@ -51,7 +51,7 @@ static Voicing makeVoicing(Rng& r) {
   return v;
 }
 
-struct TNote { double t0, t1, f; int midi; };
+struct TNote { double t0, t1, f, ta; int midi; };
 struct TChord { double t0, t1; std::string name; };
 
 struct Piece {
@@ -71,7 +71,7 @@ static void writeTruth(const std::string& dir, const Piece& p, int fs) {
     fprintf(f, "%s{\"t0\":%.3f,\"t1\":%.3f,\"name\":\"%s\"}", i ? "," : "", p.chords[i].t0, p.chords[i].t1, p.chords[i].name.c_str());
   fprintf(f, "],\n\"notes\":[");
   for (size_t i = 0; i < p.notes.size(); ++i)
-    fprintf(f, "%s{\"midi\":%d,\"t0\":%.3f,\"t1\":%.3f,\"f\":%.4f}", i ? "," : "", p.notes[i].midi, p.notes[i].t0, p.notes[i].t1, p.notes[i].f);
+    fprintf(f, "%s{\"midi\":%d,\"t0\":%.3f,\"t1\":%.3f,\"ta\":%.3f,\"f\":%.4f}", i ? "," : "", p.notes[i].midi, p.notes[i].t0, p.notes[i].t1, p.notes[i].ta, p.notes[i].f);
   fprintf(f, "]}\n");
   fclose(f);
 }
@@ -83,10 +83,11 @@ static void finish(Piece& p, const std::vector<NoteEvent>& ev, double total, int
   so.noteCentsSd = 4.0;
   so.seed = seed;
   p.audio.assign((size_t)(total * fs), 0.f);
-  auto freqs = renderNotes(p.audio.data(), p.audio.size(), fs, ev, so);
+  std::vector<double> aud;
+  auto freqs = renderNotes(p.audio.data(), p.audio.size(), fs, ev, so, &aud);
   for (size_t i = 0; i < ev.size(); ++i) {
     TNote n;
-    n.t0 = ev[i].t0; n.t1 = ev[i].t1; n.f = freqs[i]; n.midi = ev[i].midi;
+    n.t0 = ev[i].t0; n.t1 = ev[i].t1; n.f = freqs[i]; n.ta = aud[i]; n.midi = ev[i].midi;
     p.notes.push_back(n);
   }
   if (p.reverb > 0) schroederReverb(p.audio, fs, 0.5, p.reverb);

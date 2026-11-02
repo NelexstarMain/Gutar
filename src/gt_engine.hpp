@@ -32,6 +32,12 @@ struct EngineConfig {
   bool autoTune = true;    // automatyczna korekta stroju odniesienia
   bool autoGate = true;    // automatyczne podniesienie progu przy szumie
   bool octaves = true;     // wykrywanie oktawowych podwojeń
+  bool sustain = true;     // podtrzymanie: obniżony próg dla nut, które już brzmią
+  double susK = 2.0;       // próg szumu dla nuty podtrzymanej tuż po mocnym wykryciu (zwykły: 4,5)
+  double susEvidence = 2.5; // ile punktów dowodu potrzeba (alikwot niezależny = 1, wspólny z niższą nutą = 0,5)
+  double endLag = 0.25;    // część okna analizy odejmowana od końca nuty (0,5 = dokładnie dla nut urwanych, 0 = dla zanikających)
+  double release = 0.13;   // tolerancja na chwilowy zanik nuty [s]
+  double susHold = 4.0;    // jak długo [s] próg pozostaje niski; potem rośnie do zwykłego w ciągu kolejnych 10 s
   bool hand = true;        // śledzenie ręki: odrzucaj nuty niemożliwe do zagrania razem
   bool handMotion = true;  // ... także skoki ręki szybsze, niż ręka zdąży
   double octRatio = 2.0;
@@ -68,6 +74,7 @@ public:
   void configure(const EngineConfig& c) {
     const bool rebuild = (c.win != cfg_.win) || !ready_;
     cfg_ = c;
+    tracker_.releaseSec = c.release; tracker_.endLagFrac = c.endLag;
     if (!ready_) return;
     if (rebuild) setupWindow();
     mp_.setRange(kTunings[cfg_.tuning].open[0], kTunings[cfg_.tuning].open[5] + 24);
@@ -385,6 +392,7 @@ private:
       spec_.pickPeaks(po, peaks_);
       if (cfg_.autoTune && !prepassed_) liveTuning();
       mp_.detect(peaks_, dets_);
+      if (cfg_.sustain) addSustained(t);
       fr.handRejected = (uint8_t)std::min(255, hand_.filter(dets_, t, lastOnset_ < 0 ? 1e9 : t - lastOnset_, wSec));
 #ifdef GT_DEBUG
       if (!hand_.lastRej.empty() && std::getenv("GT_TRACE_HAND")) { fprintf(stderr, "HAND t=%.3f rej:", t); for (int m : hand_.lastRej) fprintf(stderr, " %d", m); fprintf(stderr, " | kept:"); for (const auto& d : dets_) fprintf(stderr, " %d", d.midi); fprintf(stderr, "\n"); }
@@ -433,6 +441,70 @@ private:
   }
   bool prevSilent_ = true;
 
+
+  // Czułość podtrzymania. Nuta, która już brzmi, ale w tej ramce nie przeszła zwykłych progów (zanikła pod nowszymi dźwiękami,
+  // cichnie), jest sprawdzana jeszcze raz w widmie z obniżonym progiem szumu, tylko w miejscach jej alikwotów.
+  // Próg jest najniższy tuż po mocnym wykryciu i rośnie z czasem do zwykłego. Alikwoty wspólne z innymi nutami nie liczą się
+  // jako dowód (inaczej poduktawa podtrzymywałaby się na energii wyższej nuty).
+  void addSustained(double t) {
+    if (tracker_.active.empty()) return;
+    const auto& mag = spec_.mag();
+    const auto& nf = spec_.noiseFloor();
+    const double bh = spec_.binHz(), B = 2.5e-4;
+    const int K = (int)mag.size();
+    std::vector<NoteDet> add;
+    for (const auto& kv : tracker_.active) {
+      const int m = kv.first;
+      const NoteTracker::Active& a = kv.second;
+      bool present = false;
+      for (const auto& d : dets_) if (d.midi == m) { present = true; break; }
+      if (present || a.f <= 0) continue;
+      const double age = t - a.lastStrong;
+      if (age > cfg_.susHold + 10.0) continue;
+      const bool struck = lastOnset_ >= 0 && a.lastStrong < lastOnset_;
+      const double k = cfg_.susK + (age <= cfg_.susHold ? 0.0 : (4.5 - cfg_.susK) * (age - cfg_.susHold) / 10.0);
+      int hits = 0, indep = 0;
+      double a2 = 0, evidence = 0;
+      for (int h = 1; h <= 8; ++h) {
+        const double fh = h * a.f * std::sqrt(1 + B * h * h);
+        if (fh > 4800 || fh > 0.45 * fsd_) break;
+        const double tol = 25 + 1.5 * h;
+        const int k0 = std::max(2, (int)std::floor(fh * std::pow(2.0, -tol / 1200) / bh)), k1 = std::min(K - 2, (int)std::ceil(fh * std::pow(2.0, tol / 1200) / bh));
+        int kb = -1;
+        double mb = 0;
+        for (int q = k0; q <= k1; ++q) if (mag[q] > mb && mag[q] >= mag[q - 1] && mag[q] >= mag[q + 1]) { mb = mag[q]; kb = q; }
+        if (kb < 0 || mb < k * nf[kb] || mb < std::pow(10.0, gateEff_ / 20) * 0.2) continue;
+        ++hits;
+        // dowód: alikwot niezależny liczy się w całości; wspólny z nutą niższą (typowa wyższa oktawa) w połowie;
+        // wspólny z nutą wyższą wcale (tak podtrzymywałaby się poduktawa na energii wyższej nuty)
+        bool sharedLow = false, sharedHigh = false;
+        auto share = [&](const NoteDet& o) {
+          for (int h2 = 1; h2 <= 12; ++h2)
+            if (std::fabs(1200 * std::log2(fh / (h2 * o.f * std::sqrt(1 + B * h2 * h2)))) < 45) { (o.f < a.f ? sharedLow : sharedHigh) = true; return; }
+        };
+        for (const auto& o : dets_) share(o);
+        for (const auto& o : add) share(o);
+        if (sharedHigh) continue;
+        // po nowym uderzeniu stara nuta, której nikt nie potwierdził, przeżywa tylko na własnych alikwotach
+        // (wspólne z nowymi, niższymi nutami nie dowodzą, że ona jeszcze brzmi)
+        if (sharedLow && struck) continue;
+        evidence += sharedLow ? 0.5 : 1.0;
+        if (!sharedLow) ++indep;
+        if (h <= 4) a2 += mb * mb;
+      }
+#ifdef GT_DEBUG
+      if (std::getenv("GT_TRACE_SUS") && std::atoi(std::getenv("GT_TRACE_SUS")) == m) fprintf(stderr, "SUS t=%.2f midi=%d f=%.1f age=%.2f k=%.2f hits=%d indep=%d evidence=%.1f -> %s\n", t, m, a.f, age, k, hits, indep, evidence, evidence >= cfg_.susEvidence ? "podtrzymana" : "koniec");
+#endif
+      if (evidence < cfg_.susEvidence) continue;
+      NoteDet n;
+      n.midi = m; n.f = (float)a.f; n.cents = (float)(1200 * std::log2(a.f / midiFreq(m, mp_.a4())));
+      n.amp = (float)std::sqrt(a2); n.score = (float)(a.score * 0.6); n.nh = hits; n.sustained = true;
+      add.push_back(n);
+    }
+    for (const auto& n : add) dets_.push_back(n);
+    if (!add.empty()) std::sort(dets_.begin(), dets_.end(), [](const NoteDet& x, const NoteDet& y) { return x.midi < y.midi; });
+  }
+
   void liveTuning() {
     addTuningVotes(peaks_, tuneHist_, tuneWeight_, 1.0);
     // powolne zapominanie
@@ -469,10 +541,13 @@ private:
     const double ws = std::pow(settle, 1.5);
     const double lam = std::exp(-hopSec / 2.5);
     if (!changed_) for (int p = 0; p < 12; ++p) { harmEv_[p] *= lam; harmBass_[p] *= lam; }
+    // nuty podtrzymane z obniżonym progiem nie są dowodem dla akordu tuż po uderzeniu: okno zawiera jeszcze energię starego akordu
+    auto stale = [&](const NoteDet* n) { return n->sustained && settle < 1.0; };
     double sMax = 0, aMax = 0;
-    for (const auto* n : stable) { sMax = std::max<double>(sMax, n->score); aMax = std::max<double>(aMax, n->amp); }
+    for (const auto* n : stable) { if (stale(n)) continue; sMax = std::max<double>(sMax, n->score); aMax = std::max<double>(aMax, n->amp); }
     int bass = 1000;
     for (const auto* n : stable) {
+      if (stale(n)) continue;
       const double a = std::sqrt(std::max<double>(n->amp, 1e-6));
       const int pc = n->midi % 12;
       segEv_[pc] += ws * a;
@@ -549,7 +624,7 @@ private:
     (void)t;
     const NoteDet* single = nullptr;
     int nBase = 0;
-    for (const auto& d : dets_) if (!d.octave) { ++nBase; single = &d; }
+    for (const auto& d : dets_) if (!d.octave && !d.sustained) { ++nBase; single = &d; }
     if (silent || nBase != 1) { tunerHist_.clear(); tunerMidi_ = -1; return; }
     const NoteDet& p = *single;
     double f = p.f;

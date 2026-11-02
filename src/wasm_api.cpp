@@ -59,7 +59,7 @@ int finish(const std::string& o) { return (int)o.size(); }
 GT_EXPORT(gt_api_version) int gt_api_version() { return 3; }
 
 GT_EXPORT(gt_config)
-void gt_config(double a4, int win, double gateDb, int mains, int autoTune, int autoGate, int tuning, int octaves, int hand) {
+void gt_config(double a4, int win, double gateDb, int mains, int autoTune, int autoGate, int tuning, int octaves, int hand, int sustain) {
   State& s = S();
   s.cfg.a4 = a4 < 400 || a4 > 480 ? 440 : a4;
   s.cfg.win = (win == 2048 || win == 8192) ? win : 4096;
@@ -70,6 +70,8 @@ void gt_config(double a4, int win, double gateDb, int mains, int autoTune, int a
   s.cfg.tuning = (tuning >= 0 && tuning < kNumTunings) ? tuning : 0;
   s.cfg.octaves = octaves != 0;
   s.cfg.hand = hand != 0;
+  s.cfg.sustain = sustain > 0;               // 0 wyłączone, 1 normalne, 2 mocne
+  s.cfg.susEvidence = sustain >= 2 ? 1.8 : 2.5;
   s.eng.configure(s.cfg);
 }
 

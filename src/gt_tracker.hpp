@@ -15,6 +15,7 @@ class NoteTracker {
 public:
   struct Active {
     double t0 = 0, last = 0, amp = 0, pre = -1;
+    double f = 0, lastStrong = 0, score = 0; // ostatnia dopasowana częstotliwość, czas i siła ostatniego mocnego wykrycia
     int miss = 0, vel = 80;
   };
 
@@ -28,7 +29,7 @@ public:
 
   // t: czas ramki; winSec: długość okna analizy (do korekty końca nuty)
   void update(double t, const std::vector<NoteDet>& dets, bool silent, double onsetT, double hopSec, double winSec) {
-    const double endLag = 0.5 * winSec;
+    const double endLag = endLagFrac * winSec;
     if (silent) {
       for (auto it = active.begin(); it != active.end();) { endNote(it->first, it->second.last - endLag); it = active.erase(it); }
       cand_.clear();
@@ -53,10 +54,12 @@ public:
           endNote(m, lastOnset); // struna uderzona ponownie
           a = Active();
           a.t0 = lastOnset; a.last = t; a.amp = d->amp; a.vel = velocity(d->amp);
+          a.f = d->f; a.lastStrong = t; a.score = d->score;
         } else {
           a.miss = 0; a.last = t; a.amp = std::max(a.amp * 0.9, (double)d->amp);
+          if (!d->sustained) { a.f = d->f; a.lastStrong = t; a.score = d->score; }
         }
-      } else if (++a.miss * hopSec >= kReleaseSec) {
+      } else if (++a.miss * hopSec >= releaseSec) {
         endNote(m, a.last - endLag);
         erase = true;
       }
@@ -75,6 +78,7 @@ public:
         Active a;
         a.t0 = (lastOnset >= 0 && c.first - lastOnset < 0.5) ? lastOnset : c.first - winSec * 0.5;
         a.last = t; a.amp = c.amp; a.vel = velocity(c.amp);
+        a.f = n.f; a.lastStrong = t; a.score = n.score;
         active[n.midi] = a;
         cand_.erase(n.midi);
       }
@@ -93,7 +97,9 @@ public:
   }
 
   // nuta musi być widoczna kilka ramek (odporność na krótkie zjawy na styku nut) i znikać na dłużej
-  static constexpr double kConfirmSec = 0.085, kReleaseSec = 0.13, kMinNoteSec = 0.08, kRetriggerSec = 0.4;
+  static constexpr double kConfirmSec = 0.085, kMinNoteSec = 0.08, kRetriggerSec = 0.4;
+  double endLagFrac = 0.25; // jaką część okna analizy odjąć od czasu ostatniego wykrycia (okno wygładza koniec nuty)
+  double releaseSec = 0.13; // ile nuta może być niewidoczna, zanim uznamy ją za zakończoną (mostkuje chwilowe zaniki)
 
   static int velocity(double a) {
     return (int)clampd(std::lround(64 + 28 * std::log10(std::max(a, 1e-4) / 0.02)), 20, 127);

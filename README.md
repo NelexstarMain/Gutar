@@ -54,18 +54,31 @@ dudnienie polaryzacji, ślizg wysokości przy ataku, rezonans pudła, pogłos, s
 
 | metryka (holdout) | oryginał JS | nowy C++ |
 |---|---:|---:|
-| akord rozpoznany poprawnie (uderzenia) | 90,2 % | **96,0 %** |
-| akord poprawny w ramkach okna oceny | 87,0 % | **95,9 %** |
-| migotanie etykiety akordu (zmian/akord) | 0,48 | **0,09** |
+| akord rozpoznany poprawnie (uderzenia) | 90,2 % | **95,7 %** |
+| akord poprawny w ramkach okna oceny | 87,0 % | **95,1 %** |
+| migotanie etykiety akordu (zmian/akord) | 0,48 | **0,13** |
 | opóźnienie pierwszego poprawnego akordu | 0,54 s | **0,34 s** |
 | akord przy rozstrojonej gitarze (−35…+32¢) | 64,8 % | **100 %** |
-| nuty (F1 obecności dźwięku) | 58,5 % | **63,9 %** |
-| początki nut (F1, tol. 120 ms) | 70,0 % | **76,6 %** |
+| nuty (F1 obecności dźwięku) | 58,5 % | **66,2 %** |
+| początki nut (F1, tol. 120 ms) | 70,0 % | **78,1 %** |
+| pokrycie słyszalnego czasu nuty (patrz niżej) | 64,8 % | **71,4 %** (mocne podtrzymanie 74,6 %) |
 | stroik: trafiony dźwięk (melodie) | 90,5 % | **97,6 %** |
 | stroik: mediana błędu częstotliwości | 0,72¢ | **0,30¢** |
-| czas analizy / czas nagrania (natywnie) | 0,034 | **0,020** |
+| czas analizy / czas nagrania (natywnie) | 0,033 | **0,021** |
 
-Śledzenie ręki osobno (`tools/ghost.py`, zbiór kontrolny, uderzenia): fałszywe dźwięki w ramkach (wysokość, której nie ma w granym chwycie)
+**Podtrzymanie nut** (`addSustained` w `src/gt_engine.hpp`). Nuta, która już brzmi, a w danej ramce nie przechodzi zwykłych progów, jest
+sprawdzana jeszcze raz w widmie z obniżonym progiem szumu (2,0 zamiast 4,5), tylko w miejscach jej alikwotów. Próg rośnie z czasem od ostatniego mocnego
+wykrycia (po 4 s zaczyna wracać do zwykłego, po 14 s koniec). Dowodem są alikwoty niezależne (1 pkt) albo wspólne z nutą **niższą** (0,5 pkt, typowa wyższa oktawa);
+alikwoty wspólne z nutą wyższą nie liczą się wcale, żeby poduktawa nie podtrzymywała się na energii wyższej nuty. Po nowym uderzeniu stara nuta bez potwierdzenia
+przeżywa tylko na własnych alikwotach, a w oknie tuż po uderzeniu nuty podtrzymane nie są dowodem dla akordu. Poziomy w ustawieniach: wyłączone, normalne, mocne.
+Do tego koniec nuty to ostatnie wykrycie minus 0,25 okna (było 0,5), bo okno analizy wygładza koniec, ale nie aż tak mocno dla nut zanikających.
+
+Miara `cov` w `tools/score.py`: jaką część słyszalnego czasu nuty (do spadku dominującego alikwotu o 40 dB albo do zwolnienia struny) pokrywają wykryte nuty
+tej wysokości. Poprzednia wersja silnika miała 61,7 % (gorzej od oryginału), po zmianie 71,4 %, a nuty pokryte w co najmniej 80 % to 52,1 → 60,9 % (mocne: 67,1 %).
+Koszt: akordy w ramkach 95,9 → 95,1 %, a fałszywych dźwięków przybywa (2,0 → 2,7 % ramek) przy 15 % więcej prawdziwych ramek nut. Ok. 15 % nut z długim ogonem
+to podwojenia oktawowe, których silnik w ogóle nie wykrywa (osobny problem).
+
+Śledzenie ręki osobno (`tools/ghost.py`, zbiór kontrolny z wcześniejszej generacji, uderzenia, przed dodaniem podtrzymania): fałszywe dźwięki w ramkach (wysokość, której nie ma w granym chwycie)
 **966 → 776 (−20 %)**, segmenty z duchem 128 → 102, różne wysokości-duchy 161 → 124, kosztem 0,1 % prawdziwych ramek. Pozostałe duchy
 to głównie **poduktawy zagranych nut** (np. E2 zamiast E3), które da się fizycznie zagrać na sąsiedniej strunie, więc reguły ręki ich nie wykluczą.
 Próba odrzucania poduktaw po braku nieparzystych alikwotów nie zadziałała (usunięta), bo w akordzie te alikwoty pokrywają się z innymi nutami.

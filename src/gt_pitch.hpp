@@ -13,6 +13,7 @@ struct NoteDet {
   float amp = 0;    // siła (pierwiastek z sumy kwadratów amplitud 4 pierwszych alikwotów)
   float score = 0;
   int nh = 0;       // ile z 6 pierwszych alikwotów znaleziono
+  bool sustained = false; // nuta podtrzymana: wykryta z obniżonym progiem, bo już brzmiała
   bool octave = false; // podwojenie oktawowe niższej nuty (wykryte po nadmiarze parzystych alikwotów)
 };
 
