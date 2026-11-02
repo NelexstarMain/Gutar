@@ -30,6 +30,10 @@ int main(int argc, char** argv) {
     else if (!strcmp(argv[i], "--no-maskclean")) cfg.maskClean = false;
     else if (!strcmp(argv[i], "--maskthr") && i + 1 < argc) cfg.maskThr = atof(argv[++i]);
     else if (!strcmp(argv[i], "--model")) cfg.model = true;
+    else if (!strcmp(argv[i], "--no-gen5")) cfg.gen5 = false;
+    else if (!strcmp(argv[i], "--g5on") && i + 1 < argc) cfg.g5On = atof(argv[++i]);
+    else if (!strcmp(argv[i], "--g5fr") && i + 1 < argc) cfg.g5Fr = atof(argv[++i]);
+    else if (!strcmp(argv[i], "--g5start") && i + 1 < argc) cfg.g5Start = atof(argv[++i]);
     else if (!strcmp(argv[i], "--model-live")) cfg.modelLive = true;
     else if (!strcmp(argv[i], "--no-model")) cfg.model = false;
     else if (!strcmp(argv[i], "--mthr") && i + 1 < argc) cfg.modelThr = atof(argv[++i]);
@@ -102,6 +106,7 @@ int main(int argc, char** argv) {
   eng.begin(fs);
   if (getenv("GT_DUMP")) eng.dumpFile_ = fopen(getenv("GT_DUMP"), "wb");
   if (getenv("GT_NOMASKFEAT")) eng.dbgPitch().dropMaskFeat_ = true;
+  if (getenv("GT_DUMPH")) eng.dumpH_ = fopen(getenv("GT_DUMPH"), "wb");
   if (getenv("GT_DUMPM")) eng.dumpMask_ = fopen(getenv("GT_DUMPM"), "wb");
   if (jt0 >= 0) eng.dbgPitch().jointTol0_ = jt0;
   if (jt1 >= 0) eng.dbgPitch().jointTol1_ = jt1;
@@ -112,6 +117,7 @@ int main(int argc, char** argv) {
   eng.finish();
   if (eng.dumpFile_) fclose(eng.dumpFile_);
   if (eng.dumpMask_) fclose(eng.dumpMask_);
+  if (eng.dumpH_) fclose(eng.dumpH_);
   const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
 
   FILE* f = fopen(argv[3], "w");

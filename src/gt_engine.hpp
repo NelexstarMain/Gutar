@@ -8,6 +8,7 @@
 #include "gt_hand.hpp"
 #include "gt_tracker.hpp"
 #include "gt_mask.hpp"
+#include "gt_gen5.hpp"
 
 namespace gt {
 
@@ -40,6 +41,8 @@ struct EngineConfig {
   // docinanie granic nut krótkim oknem po analizie pliku (refine)
   // odszumianie z wielu klatek (analiza pliku): widmo szumu tła = kwantyl amplitudy w każdym binie przez wszystkie klatki nagrania.
   // Na żywo wyłączone: statystyka minimów (Martin 2001) i szum z klatek ciszy wycinały brzmiące struny (README).
+  bool gen5 = true;         // model gen 5 (gt_gen5.hpp) przy analizie pliku: zastępuje listę nut
+  double g5On = 0.5, g5Fr = 0.5, g5Start = 0.7;
   bool model = true;        // wytrenowany model wybiera nuty spośród kandydatów (gt_model.hpp), przy analizie pliku
   bool modelLive = false;   // ... także na żywo (w pomiarze akordy na żywo gorsze: 95,4 -> 88,9 %)
   double modelThr = -1;    // próg prawdopodobieństwa (-1 = dobrany przy uczeniu, kModelThr)
@@ -200,6 +203,16 @@ public:
     if (finished_) return;
     tracker_.endAll(nd_ / fsd_);
     finished_ = true;
+    const bool g5 = keepDecimated_ && !dfull_.empty() && cfg_.gen5 && kGen5Ready;
+    if (keepDecimated_ && !dfull_.empty() && (dumpH_ || g5)) {
+      Hcqt h; h.compute(dfull_, fsd_);
+      if (dumpH_) {
+        const int32_t hdr[3] = {h.T, Hcqt::C, Hcqt::P};
+        fwrite(hdr, sizeof(int32_t), 3, dumpH_);
+        fwrite(h.v.data(), sizeof(float), h.v.size(), dumpH_);
+      }
+      if (g5) applyGen5(h);
+    }
     if (keepDecimated_ && cfg_.refine && !dfull_.empty()) refineEvents();
     if (keepDecimated_ && cfg_.context && !dfull_.empty()) contextRepair();
     if (keepDecimated_ && cfg_.chordsFromNotes) chordsFromNotes();
@@ -299,6 +312,7 @@ public:
   }
   bool finished() const { return finished_; }
   MultiPitch& dbgPitch() { return mp_; }
+  FILE* dumpH_ = nullptr;    // zrzut wejścia HCQT do uczenia modelu gen 5 (tools/train_gen5.py)
   FILE* dumpMask_ = nullptr; // zrzut cech pasm do uczenia modelu maski (tools/train_mask.py)
   FILE* dumpFile_ = nullptr; // zrzut cech kandydatów do uczenia modelu (tools/train_model.py)
 
@@ -745,6 +759,32 @@ private:
     }
     std::sort(out.begin(), out.end(), [](const NoteEvent2& a, const NoteEvent2& b) { return a.t0 < b.t0 || (a.t0 == b.t0 && a.midi < b.midi); });
     evs.swap(out);
+  }
+
+  // ---------------------------------------------------------------- model gen 5
+  // Analiza pliku: sieć na całym nagraniu zastępuje listę nut i nuty w ramkach; potem jak dotąd docinanie początków i akordy z nut.
+  void applyGen5(const Hcqt& h) {
+    Gen5 net;
+    net.run(h);
+    Gen5::DecodeOpt o;
+    o.thOn = cfg_.g5On; o.thFr = cfg_.g5Fr; o.thStart = cfg_.g5Start;
+    net.decode(h, fsd_, mp_.a4(), o, tracker_.events);
+    tracker_.active.clear();
+    for (size_t m = 0; m < frames_.size() && (int)m < net.T; ++m) {
+      FrameRec& fr = frames_[m];
+      struct Q { int s; float p; };
+      std::vector<Q> q;
+      for (int s = 0; s < Gen5::S; ++s) if (net.fr((int)m, s) >= cfg_.g5Fr) q.push_back({s, net.fr((int)m, s)});
+      std::sort(q.begin(), q.end(), [](const Q& a, const Q& b) { return a.p > b.p; });
+      if (q.size() > 8) q.resize(8);
+      std::sort(q.begin(), q.end(), [](const Q& a, const Q& b) { return a.s < b.s; });
+      fr.nNotes = (uint8_t)q.size();
+      for (size_t i = 0; i < q.size(); ++i) {
+        FrameNote& n = fr.notes[i];
+        n.midi = (int16_t)(Hcqt::kMidi0 + q[i].s); n.f = (float)midiFreq(n.midi, mp_.a4()); n.cents = 0;
+        n.amp = h.at((int)m, 1, 3 * q[i].s + 1); n.stable = true;
+      }
+    }
   }
 
   // ---------------------------------------------------------------- kontekst czasowy
