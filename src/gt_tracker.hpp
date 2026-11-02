@@ -9,6 +9,7 @@ struct NoteEvent2 {
   int midi = 0;
   double t0 = 0, t1 = 0;
   int vel = 80;
+  float f = 0; // dopasowana częstotliwość podstawowa [Hz] (0 = nieznana)
 };
 
 class NoteTracker {
@@ -24,7 +25,7 @@ public:
   double lastOnset = -1;
 
   void reset() {
-    events.clear(); active.clear(); cand_.clear(); recentEnd_.clear(); lastOnset = -1; reUntil_ = -1;
+    events.clear(); active.clear(); cand_.clear(); recentEnd_.clear(); onsetHist_.clear(); lastOnset = -1; reUntil_ = -1;
   }
 
   // t: czas ramki; winSec: długość okna analizy (do korekty końca nuty)
@@ -37,6 +38,8 @@ public:
       return;
     }
     if (onsetT >= 0) {
+      onsetHist_.push_back(onsetT);
+      while (!onsetHist_.empty() && onsetHist_.front() < onsetT - 3.0) onsetHist_.erase(onsetHist_.begin());
       lastOnset = onsetT;
       reUntil_ = t + 4.5 * hopSec;
       for (auto& kv : active) kv.second.pre = kv.second.amp;
@@ -76,7 +79,12 @@ public:
         auto re = recentEnd_.find(n.midi);
         if (re != recentEnd_.end() && t - re->second.t < kRetriggerSec && c.amp < 1.3 * re->second.amp) continue;
         Active a;
-        a.t0 = (lastOnset >= 0 && c.first - lastOnset < 0.5) ? lastOnset : c.first - winSec * 0.5;
+        // początek = ostatnie uderzenie sprzed pierwszego wykrycia (z zapasem na opóźnienie okna); samo "ostatnie uderzenie"
+        // w arpeggio bywało już uderzeniem następnej struny
+        double best = -1;
+        for (double o : onsetHist_) if (o <= c.first - kOnsetLead && c.first - o < 0.5) best = std::max(best, o);
+        if (best < 0 && lastOnset >= 0 && c.first - lastOnset < 0.5 && lastOnset <= c.first) best = lastOnset;
+        a.t0 = best >= 0 ? best : c.first - winSec * 0.5;
         a.last = t; a.amp = c.amp; a.vel = velocity(c.amp);
         a.f = n.f; a.lastStrong = t; a.score = n.score;
         active[n.midi] = a;
@@ -97,7 +105,7 @@ public:
   }
 
   // nuta musi być widoczna kilka ramek (odporność na krótkie zjawy na styku nut) i znikać na dłużej
-  static constexpr double kConfirmSec = 0.085, kMinNoteSec = 0.08, kRetriggerSec = 0.4;
+  static constexpr double kConfirmSec = 0.085, kMinNoteSec = 0.08, kRetriggerSec = 0.4, kOnsetLead = 0.08;
   double endLagFrac = 0.25; // jaką część okna analizy odjąć od czasu ostatniego wykrycia (okno wygładza koniec nuty)
   double releaseSec = 0.13; // ile nuta może być niewidoczna, zanim uznamy ją za zakończoną (mostkuje chwilowe zaniki)
 
@@ -110,6 +118,7 @@ private:
   struct Ended { double t = 0, amp = 0; };
   std::map<int, Cand> cand_;
   std::map<int, Ended> recentEnd_;
+  std::vector<double> onsetHist_;
   double reUntil_ = -1;
 
   void endNote(int m, double tEnd) {
@@ -120,7 +129,7 @@ private:
     recentEnd_[m] = {a.last, a.amp};
     if (tEnd - a.t0 >= kMinNoteSec && a.last - a.t0 >= kMinNoteSec * 0.8) {
       NoteEvent2 e;
-      e.midi = m; e.t0 = a.t0; e.t1 = tEnd; e.vel = a.vel;
+      e.midi = m; e.t0 = a.t0; e.t1 = tEnd; e.vel = a.vel; e.f = (float)a.f;
       events.push_back(e);
     }
   }

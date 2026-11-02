@@ -38,10 +38,12 @@ def f1(tp, fp, fn):
     return 2 * p * r / (p + r) if p + r else 0.0
 
 def active_truth(notes, g):
+    # nuta "brzmi" od 0,12 s po uderzeniu do końca słyszalności (spadek dominującego alikwotu o 40 dB) albo zwolnienia struny;
+    # starsze pliki prawdy bez 'ta': do 1,2 s
     out = []
     for n in notes:
-        dur = n['t1'] - n['t0']
-        if n['t0'] + 0.12 <= g <= n['t0'] + min(dur, 1.2):
+        end = min(n['t1'], n['ta']) if 'ta' in n else n['t0'] + min(n['t1'] - n['t0'], 1.2)
+        if n['t0'] + 0.12 <= g <= end:
             out.append(n)
     return out
 

@@ -28,7 +28,8 @@ public:
     double relThr = 0.2;
     int maxNotes = 6;
     bool octaves = true;     // wykrywaj oktawowe podwojenia
-    double octRatio = 2.0;
+    double octRatio = 1.4;
+    double octRatioMono = 2.2;
   };
 
   void init(const Options& o, double a4) {
@@ -175,6 +176,8 @@ public:
   // gładkiej obwiedni nieparzystych: a(2k) / sqrt(a(2k-1) a(2k+1)) > próg (dla samotnej struny < 1).
   void addOctaveDoubles(const std::vector<Peak>& peaks, std::vector<NoteDet>& notes) {
     const size_t n0 = notes.size();
+    // w akordzie podwojenia oktawowe są częste, przy pojedynczej nucie rzadkie: tam wymagamy wyraźniejszej nadwyżki
+    const double thr = n0 >= 2 ? o_.octRatio : o_.octRatioMono;
     for (size_t i = 0; i < n0; ++i) {
       const NoteDet base = notes[i];
       const int m2 = base.midi + 12;
@@ -193,7 +196,7 @@ public:
         if (k == 1 && c.f0 < 110) continue;
         if (a[2 * k - 1] <= 0 || a[2 * k + 1] <= 0 || a[2 * k] <= 0) continue;
         ++tried;
-        if (a[2 * k] > o_.octRatio * std::sqrt(a[2 * k - 1] * a[2 * k + 1])) ++votes;
+        if (a[2 * k] > thr * std::sqrt(a[2 * k - 1] * a[2 * k + 1])) ++votes;
       }
       if (tried >= 2 && votes >= 2) {
         NoteDet n;

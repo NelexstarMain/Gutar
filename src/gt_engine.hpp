@@ -35,12 +35,16 @@ struct EngineConfig {
   bool sustain = true;     // podtrzymanie: obniżony próg dla nut, które już brzmią
   double susK = 2.0;       // próg szumu dla nuty podtrzymanej tuż po mocnym wykryciu (zwykły: 4,5)
   double susEvidence = 2.5; // ile punktów dowodu potrzeba (alikwot niezależny = 1, wspólny z niższą nutą = 0,5)
+  bool refine = true;
+  double splitDb = 8;      // skok energii [dB], od którego brzmiąca nuta jest uznana za ponownie szarpniętą      // docinanie granic nut krótkim oknem po analizie pliku
   double endLag = 0.25;    // część okna analizy odejmowana od końca nuty (0,5 = dokładnie dla nut urwanych, 0 = dla zanikających)
   double release = 0.13;   // tolerancja na chwilowy zanik nuty [s]
   double susHold = 4.0;    // jak długo [s] próg pozostaje niski; potem rośnie do zwykłego w ciągu kolejnych 10 s
+  bool freshFull = true;   // nowe nuty liczą się do akordu od pierwszej ramki po uderzeniu
   bool hand = true;        // śledzenie ręki: odrzucaj nuty niemożliwe do zagrania razem
   bool handMotion = true;  // ... także skoki ręki szybsze, niż ręka zdąży
-  double octRatio = 2.0;
+  double octRatio = 1.4;     // próg nadwyżki parzystych alikwotów dla podwojenia oktawowego w akordzie
+  double octRatioMono = 2.2; // ... przy pojedynczej nucie
   int tuning = 0;          // indeks w kTunings
   int recordMaxSec = 1200; // limit nagrania w pamięci
   ChordParams chord;
@@ -113,6 +117,8 @@ public:
     tunerHist_.clear(); tunerMidi_ = -1;
     finished_ = false;
     prepassed_ = false;
+    keepDecimated_ = false;
+    std::vector<float>().swap(dfull_);
     prevSilent_ = true;
     if (ready_) setReference(cfg_.a4);
   }
@@ -137,6 +143,8 @@ public:
     if (finished_) return;
     tracker_.endAll(nd_ / fsd_);
     finished_ = true;
+    if (keepDecimated_ && cfg_.refine && !dfull_.empty()) refineEvents();
+    std::vector<float>().swap(dfull_);
   }
 
   // Przed-przebieg po całym nagraniu: szacuje strój odniesienia i próg szumu.
@@ -176,6 +184,9 @@ public:
     }
     prepassed_ = true;
     resetStreamKeepTuning();
+    keepDecimated_ = true;
+    dfull_.clear();
+    dfull_.reserve(n / D_ + 1024);
   }
 
   // ---------------------------------------------------------------- odczyt
@@ -232,6 +243,8 @@ private:
   std::vector<std::string> chordNames_;
   std::vector<ChordLogEntry> chordLog_;
   std::vector<int16_t> recording_;
+  std::vector<float> dfull_;   // cały sygnał po decymacji (tylko analiza pliku, do docinania granic)
+  bool keepDecimated_ = false;
   int64_t recordCap_ = 0;
   int64_t nd_ = 0;
   int sinceFrame_ = 0;
@@ -249,6 +262,7 @@ private:
   // stan akordu
   double segEv_[12], segBass_[12], harmEv_[12], harmBass_[12], oldEv_[12];
   bool haveOld_ = false, changed_ = false;
+  std::vector<int> preOnset_;
   double segStart_ = 0;
   int segLogged_ = -1;
   bool afterSilence_ = true;
@@ -277,6 +291,7 @@ private:
     o.fs = fsd_;
     o.octaves = cfg_.octaves;
     o.octRatio = cfg_.octRatio;
+    o.octRatioMono = cfg_.octRatioMono;
     mp_.init(o, cfg_.a4);
   }
 
@@ -340,6 +355,7 @@ private:
     while (i < n) {
       const int seg = std::min(n - i, kHop - sinceFrame_);
       ring_.push(d + i, seg);
+      if (keepDecimated_) dfull_.insert(dfull_.end(), d + i, d + i + seg);
       onsetTmp_.clear();
       onset_.push(d + i, seg, onsetTmp_);
       for (double t : onsetTmp_) {
@@ -442,6 +458,72 @@ private:
   bool prevSilent_ = true;
 
 
+
+  // ---------------------------------------------------------------- granice nut krótkim oknem
+  // Długie okno (372 ms) rozpoznaje wysokość, ale rozmywa granice o ~0,2 s. Po analizie pliku dla każdej nuty liczymy
+  // obwiednię energii w jej alikwotach powyżej ~380 Hz (tam okno 93 ms odróżnia sąsiednie półtony) i przesuwamy:
+  //  * początek do najstromszego narastania w pobliżu (w arpeggio nuta dostawała czas następnego uderzenia),
+  //  * koniec do najstromszego spadku, ale tylko gdy jest wyraźny (>= 10 dB), więc nuty zanikające naturalnie zostają.
+  void refineEvents() {
+    const int L = 1024, hop = 256;
+    const double fsd = fsd_, B = 2.5e-4, minF = 35.0 * fsd / L;
+    static std::vector<double> win;
+    if ((int)win.size() != L) { win.resize(L); for (int i = 0; i < L; ++i) win[i] = 0.5 - 0.5 * std::cos(2 * kPi * i / L); }
+    const int64_t N = (int64_t)dfull_.size();
+    for (auto& e : tracker_.events) {
+      const double f0 = e.f > 0 ? e.f : midiFreq(e.midi, mp_.a4());
+      std::vector<double> parts;
+      for (int h = 1; h <= 16 && (int)parts.size() < 3; ++h) {
+        const double fh = h * f0 * std::sqrt(1 + B * h * h);
+        if (fh > 0.45 * fsd || fh > 3500) break;
+        if (fh >= minF) parts.push_back(fh);
+      }
+      if (parts.empty()) continue;
+      const double ta = e.t0 - 0.5, tb = e.t1 + 0.45;
+      const int64_t s0 = std::max<int64_t>(0, (int64_t)(ta * fsd) - L / 2), s1 = std::min<int64_t>(N - L, (int64_t)(tb * fsd) - L / 2);
+      if (s1 <= s0 + 4 * hop) continue;
+      std::vector<double> tt, db;
+      for (int64_t s = s0; s <= s1; s += hop) {
+        double en = 0;
+        for (double fh : parts) {
+          const double w = 2 * kPi * fh / fsd, cw = std::cos(w), sw = std::sin(w);
+          double c = 1, sn = 0, re = 0, im = 0;
+          const float* x = dfull_.data() + s;
+          for (int i = 0; i < L; ++i) {
+            const double v = x[i] * win[i];
+            re += v * c; im -= v * sn;
+            const double c2 = c * cw - sn * sw; sn = sn * cw + c * sw; c = c2;
+          }
+          en += re * re + im * im;
+        }
+        tt.push_back((s + L / 2) / fsd);
+        db.push_back(10 * std::log10(en + 1e-12));
+      }
+      const int M = (int)db.size();
+      if (M < 6) continue;
+      double peak = -1e9;
+      for (int i = 0; i < M; ++i) if (tt[i] >= e.t0 - 0.1 && tt[i] <= e.t1) peak = std::max(peak, db[i]);
+      // początek: największe narastanie (w ~70 ms) w [t0-0,45; t0+0,12], które dochodzi blisko poziomu nuty
+      int bi = -1; double br = 0;
+      for (int i = 1; i + 2 < M; ++i) {
+        if (tt[i] < e.t0 - 0.45 || tt[i] > e.t0 + 0.12) continue;
+        const double rise = db[i + 2] - db[i - 1];
+        if (rise >= 9 && db[i + 2] >= peak - 12 && rise > br + 0.5) { br = rise; bi = i; }
+      }
+      // przesuwamy tylko przy wyraźnej pomyłce: uderzenia z detektora są dokładne, jeśli należą do tej nuty
+      if (bi >= 0 && std::fabs(tt[bi] - e.t0) > 0.08) e.t0 = std::max(0.0, tt[bi] - 0.5 * hop / fsd);
+      // koniec: najstromszy spadek (w ~70 ms) w [t1-0,4; t1+0,4]
+      int ei = -1; double bd = 0;
+      for (int i = 1; i + 2 < M; ++i) {
+        if (tt[i] < e.t1 - 0.4 || tt[i] > e.t1 + 0.4 || tt[i] < e.t0 + 0.08) continue;
+        const double drop = db[i - 1] - db[i + 2];
+        if (drop >= 10 && drop > bd) { bd = drop; ei = i; }
+      }
+      if (ei >= 0) e.t1 = tt[ei] + 0.5 * hop / fsd;
+      if (e.t1 < e.t0 + 0.08) e.t1 = e.t0 + 0.08;
+    }
+  }
+
   // Czułość podtrzymania. Nuta, która już brzmi, ale w tej ramce nie przeszła zwykłych progów (zanikła pod nowszymi dźwiękami,
   // cichnie), jest sprawdzana jeszcze raz w widmie z obniżonym progiem szumu, tylko w miejscach jej alikwotów.
   // Próg jest najniższy tuż po mocnym wykryciu i rośnie z czasem do zwykłego. Alikwoty wspólne z innymi nutami nie liczą się
@@ -535,6 +617,8 @@ private:
       haveOld_ = s0 > 1e-9;
       std::memset(segEv_, 0, sizeof segEv_); std::memset(segBass_, 0, sizeof segBass_);
       changed_ = false;
+      preOnset_.clear();
+      for (const auto& kv : tracker_.active) preOnset_.push_back(kv.first); // co brzmiało przed uderzeniem
       segStart_ = onsetT; segLogged_ = -1;
     }
     const double settle = lastOnset_ < 0 ? 1.0 : clampd((t - lastOnset_ - 0.05) / (wSec - 0.05), 0, 1);
@@ -550,7 +634,9 @@ private:
       if (stale(n)) continue;
       const double a = std::sqrt(std::max<double>(n->amp, 1e-6));
       const int pc = n->midi % 12;
-      segEv_[pc] += ws * a;
+      // tuż po uderzeniu okno zawiera jeszcze stary akord, ale nuta, która wcześniej nie brzmiała, jest czystym dowodem nowego
+      const bool fresh = cfg_.freshFull && std::find(preOnset_.begin(), preOnset_.end(), n->midi) == preOnset_.end();
+      segEv_[pc] += (fresh ? std::max(ws, 0.6) : ws) * a;
       if (!changed_) harmEv_[pc] += a;
       if ((n->score >= 0.2 * sMax || n->amp >= 0.2 * aMax) && n->midi < bass) bass = n->midi;
     }

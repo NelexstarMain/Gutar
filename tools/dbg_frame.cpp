@@ -21,7 +21,11 @@ int main(int argc, char** argv) {
   printf("%zu peaks (f,a dB):", pk.size());
   for (auto& p : pk) if (p.f < 1500) printf(" %.1f/%.0f", p.f, 20 * std::log10(p.a));
   printf("\n");
-  MultiPitch mp; MultiPitch::Options o; o.fs = fsd; mp.init(o, 440); mp.dbgMidi_ = midi;
-  std::vector<NoteDet> nd; mp.detect(pk, nd);
-  for (auto& n : nd) printf("det midi=%d f=%.1f amp=%.4f score=%.3f nh=%d\n", n.midi, n.f, n.amp, n.score, n.nh);
+  for (int mode = 0; mode < 2; ++mode) {
+    MultiPitch mp; MultiPitch::Options o; o.fs = fsd; o.octaves = false; mp.init(o, 440); mp.dbgMidi_ = midi;
+    std::vector<NoteDet> nd; mp.detect(pk, nd);
+    printf("%s:", mode ? "gładkość" : "binarne  ");
+    for (auto& n : nd) printf("  %s(%.2f)", midiName(n.midi).c_str(), n.score);
+    printf("\n");
+  }
 }

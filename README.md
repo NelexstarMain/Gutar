@@ -54,17 +54,34 @@ dudnienie polaryzacji, ślizg wysokości przy ataku, rezonans pudła, pogłos, s
 
 | metryka (holdout) | oryginał JS | nowy C++ |
 |---|---:|---:|
-| akord rozpoznany poprawnie (uderzenia) | 90,2 % | **95,7 %** |
-| akord poprawny w ramkach okna oceny | 87,0 % | **95,1 %** |
+| akord rozpoznany poprawnie (uderzenia) | 90,2 % | **96,3 %** |
+| akord poprawny w ramkach okna oceny | 87,0 % | **95,5 %** |
 | migotanie etykiety akordu (zmian/akord) | 0,48 | **0,13** |
 | opóźnienie pierwszego poprawnego akordu | 0,54 s | **0,34 s** |
 | akord przy rozstrojonej gitarze (−35…+32¢) | 64,8 % | **100 %** |
-| nuty (F1 obecności dźwięku) | 58,5 % | **66,2 %** |
-| początki nut (F1, tol. 120 ms) | 70,0 % | **78,1 %** |
-| pokrycie słyszalnego czasu nuty (patrz niżej) | 64,8 % | **71,4 %** (mocne podtrzymanie 74,6 %) |
+| nuty (F1 obecności dźwięku) | 74,2 % | **81,0 %** |
+| początki nut (F1, tol. 120 ms) | 70,0 % | **79,5 %** |
+| pokrycie słyszalnego czasu nuty | 64,8 % | **74,3 %** |
 | stroik: trafiony dźwięk (melodie) | 90,5 % | **97,6 %** |
 | stroik: mediana błędu częstotliwości | 0,72¢ | **0,30¢** |
-| czas analizy / czas nagrania (natywnie) | 0,033 | **0,021** |
+| czas analizy / czas nagrania (natywnie; WebAssembly ok. 0,03) | 0,033 | **0,021** |
+
+Nuta "brzmi" w miarach od 0,12 s po uderzeniu do końca słyszalności (spadek dominującego alikwotu o 40 dB) albo zwolnienia struny.
+Wcześniejsza wersja miary liczyła tylko pierwsze 1,2 s i karała poprawnie podtrzymane nuty; liczby w tabeli są z poprawionej miary dla obu silników.
+
+**Co poprawiło dokładność w ostatniej rundzie** (zbiór kontrolny, względem poprzedniej wersji):
+
+| zmiana | efekt |
+|---|---|
+| kontekstowy próg oktaw: w akordzie 1,4, przy pojedynczej nucie 2,2 | F1 nut 80,0 → 80,9 %, czułość nut w uderzeniach 71 → 74 %, pokrycie ogona +3 pkt, melodie bez zmian |
+| docinanie granic krótkim oknem (energia w alikwotach znanej nuty, 93 ms) | początek przesuwany przy wyraźnej pomyłce, koniec do ostrego spadku; mediana błędu końca nuty w melodiach +0,185 → +0,075 s |
+| historia uderzeń w trackerze (ostatnie uderzenie sprzed pierwszego wykrycia) | w arpeggio nuta nie dostaje już czasu następnej struny; F1 początków +1,4 pkt łącznie z docinaniem |
+| nuty "świeże" (niebrzmiące przed uderzeniem) liczą się do akordu od pierwszej ramki | akordy 95,7 → 96,3 % razem z progiem oktaw |
+
+**Sprawdzone i odrzucone** (gorsze albo bez efektu w pomiarze): kasowanie z gładkością widma (Klapuri) zamiast binarnego "wyjaśnione"
+(na pojedynczych ramkach znajduje oktawy, ale w całym potoku akordy −3…−5 pkt i początki nut −6…−8 pkt), słabi kandydaci jako dowód akordu,
+dzielenie nut na ponowne szarpnięcia po skoku energii (fałszywe podziały, gdy inna struna o wspólnych alikwotach zaczyna brzmieć),
+obecność nut w ramkach brana z dociętych zdarzeń.
 
 **Podtrzymanie nut** (`addSustained` w `src/gt_engine.hpp`). Nuta, która już brzmi, a w danej ramce nie przechodzi zwykłych progów, jest
 sprawdzana jeszcze raz w widmie z obniżonym progiem szumu (2,0 zamiast 4,5), tylko w miejscach jej alikwotów. Próg rośnie z czasem od ostatniego mocnego
