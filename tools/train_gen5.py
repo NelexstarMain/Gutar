@@ -6,6 +6,9 @@ float32 T x C x P. Klatka t ma środek okna w (t*512 + 2048) / 11025 s; wysokoś
 Wyjście sieci: dla każdej klatki i każdego półtonu MIDI 36..88: p(nuta brzmi), p(nuta zaczyna się w tej klatce).
 Etykiety: korpus i środowiska (*.truth.json: t0 .. min(t1, ta)), GuitarSet (*.jams). Początek: najbliższa klatka 1, sąsiednie 0,4.
 
+Opcja --attn dodaje blok uwagi (attention) w czasie: dla każdej wysokości klatka patrzy na ostatnią sekundę (22 klatki) tej samej
+wysokości, 2 głowy, wyuczona premia za odległość, potem feed-forward; uwaga tylko wstecz.
+
 Użycie:
   train_gen5.py --src środowiska <zrzuty> <prawda> 0.25 --src korpus <zrzuty> <prawda> 0.25 --src GuitarSet <zrzuty> <jams> 0.5
                 [--val-gs 02_Funk] [--hidden 24] [--epochs 14] [--out src/gt_gen5model.hpp]
@@ -60,14 +63,45 @@ def truth_path(tdir, name):
     return None
 
 
+class TimeAttention(nn.Module):
+    """Uwaga w czasie dla każdej wysokości osobno: klatka t patrzy na klatki t-W+1..t (ostatnia sekunda) tej samej wysokości.
+    nh głów po H/nh wymiarów, wyuczona premia za odległość w czasie, potem warstwa feed-forward (jak w transformerze)."""
+    def __init__(self, H, W=22, nh=2):
+        super().__init__()
+        self.W, self.nh, self.dh = W, nh, H // nh
+        self.qkv = nn.Conv2d(H, 3 * H, 1)
+        self.o = nn.Conv2d(H, H, 1)
+        self.rel = nn.Parameter(torch.zeros(nh, W))
+        self.f1 = nn.Conv2d(H, 2 * H, 1); self.f2 = nn.Conv2d(2 * H, H, 1)
+
+    def forward(self, h):  # B x H x T x P
+        B, H, T, P = h.shape
+        q, k, v = self.qkv(h).chunk(3, dim=1)
+        def heads(x):  # -> (B*P) x nh x T x dh
+            return x.reshape(B, self.nh, self.dh, T, P).permute(0, 4, 1, 3, 2).reshape(B * P, self.nh, T, self.dh)
+        q, k, v = heads(q), heads(k), heads(v)
+        sc = q @ k.transpose(-1, -2) / self.dh ** 0.5  # (BP) x nh x T x T
+        ti = torch.arange(T)
+        d = ti[:, None] - ti[None, :]                  # t - s
+        ok = (d >= 0) & (d < self.W)
+        bias = self.rel[:, d.clamp(0, self.W - 1)]      # nh x T x T
+        sc = sc + bias[None]
+        sc = sc.masked_fill(~ok[None, None], float('-inf'))
+        att = torch.softmax(sc, dim=-1) @ v             # (BP) x nh x T x dh
+        att = att.reshape(B, P, self.nh, T, self.dh).permute(0, 2, 4, 3, 1).reshape(B, H, T, P)
+        h = h + self.o(att)
+        return h + self.f2(F.relu(self.f1(h)))
+
+
 class Net(nn.Module):
-    def __init__(self, H=24):
+    def __init__(self, H=24, attn=False):
         super().__init__()
         self.c1 = nn.Conv2d(C, H, (3, 7), padding=(1, 3))     # alikwoty i sąsiednie wysokości
         self.c2 = nn.Conv2d(H, H, (3, 7), padding=(1, 3))
         self.c3 = nn.Conv2d(H, H, (5, 3), padding=(2, 1))     # kontekst w czasie (przed i po)
         self.c4 = nn.Conv2d(H, H, (1, 3), padding=(0, 36), dilation=(1, 36))  # oktawa niżej i wyżej
         self.c5 = nn.Conv2d(H, H, (3, 3), padding=(1, 1))
+        self.att = TimeAttention(H) if attn else None
         self.out = nn.Conv2d(H, 2, (1, 3), stride=(1, 3))     # 3 biny -> półton; kanały: brzmi, początek
 
     def forward(self, x):  # x: B x C x T x P
@@ -76,6 +110,8 @@ class Net(nn.Module):
         h = h + F.relu(self.c3(h))
         h = h + F.relu(self.c4(h))
         h = h + F.relu(self.c5(h))
+        if self.att is not None:
+            h = self.att(h)
         return self.out(h)  # B x 2 x T x S (logity)
 
 
@@ -87,6 +123,17 @@ def export(net, path, info):
         w = m.weight.detach().numpy().astype(np.float32); b = m.bias.detach().numpy().astype(np.float32)
         s += 'static const float kG5_%s_w[%d] = {%s};\n' % (name, w.size, ','.join('%.6g' % x for x in w.ravel()))
         s += 'static const float kG5_%s_b[%d] = {%s};\n' % (name, b.size, ','.join('%.6g' % x for x in b.ravel()))
+    if net.att is not None:
+        A = net.att
+        s += 'static constexpr int kGen5Attn = 1, kGen5W = %d, kGen5Heads = %d;\n' % (A.W, A.nh)
+        for name, t in (('qkv_w', A.qkv.weight), ('qkv_b', A.qkv.bias), ('o_w', A.o.weight), ('o_b', A.o.bias), ('rel', A.rel),
+                        ('f1_w', A.f1.weight), ('f1_b', A.f1.bias), ('f2_w', A.f2.weight), ('f2_b', A.f2.bias)):
+            x = t.detach().numpy().astype(np.float32)
+            s += 'static const float kG5_att_%s[%d] = {%s};\n' % (name, x.size, ','.join('%.6g' % v for v in x.ravel()))
+    else:
+        s += 'static constexpr int kGen5Attn = 0, kGen5W = 1, kGen5Heads = 1;\n'
+        for name in ('qkv_w', 'qkv_b', 'o_w', 'o_b', 'rel', 'f1_w', 'f1_b', 'f2_w', 'f2_b'):
+            s += 'static const float kG5_att_%s[1] = {0};\n' % name
     s += '} // namespace gt\n'
     open(path, 'w').write(s)
 
@@ -98,6 +145,7 @@ def main():
     ap.add_argument('--epochs', type=int, default=14); ap.add_argument('--steps', type=int, default=400)
     ap.add_argument('--out', default=os.path.join(os.path.dirname(__file__), '..', 'src', 'gt_gen5model.hpp'))
     ap.add_argument('--seed', type=int, default=1)
+    ap.add_argument('--attn', action='store_true', help='blok uwagi w czasie (ostatnia sekunda, 2 głowy)')
     a = ap.parse_args()
     torch.manual_seed(a.seed); rng = np.random.default_rng(a.seed)
     srcs = []
@@ -114,7 +162,7 @@ def main():
             (va if isval else tr).append(item)
         srcs.append((name, tr, va, float(w)))
         print('%-12s uczące %d, walidacja %d' % (name, len(tr), len(va)))
-    net = Net(a.hidden)
+    net = Net(a.hidden, a.attn)
     print('parametry:', sum(p.numel() for p in net.parameters()))
     opt = torch.optim.Adam(net.parameters(), lr=2e-3)
     sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, a.epochs * a.steps)
