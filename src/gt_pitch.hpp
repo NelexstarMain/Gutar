@@ -5,6 +5,7 @@
 #include <map>
 #include "gt_spectrum.hpp"
 #include "gt_model.hpp"
+#include "gt_mask.hpp"
 
 namespace gt {
 
@@ -16,6 +17,7 @@ struct NoteDet {
   float score = 0;
   int nh = 0;       // ile z 6 pierwszych alikwotów znaleziono
   bool sustained = false; // nuta podtrzymana: wykryta z obniżonym progiem, bo już brzmiała
+  float conf = 1;      // pewność (model: prawdopodobieństwo; bez modelu 1)
   bool octave = false; // podwojenie oktawowe niższej nuty (wykryte po nadmiarze parzystych alikwotów)
 };
 
@@ -79,7 +81,10 @@ public:
   }
 
   double a4() const { return a4_; }
-  std::vector<float> feat_, prevSal_, prob_;
+  std::vector<float> feat_, prevSal_, prevSal2_, prob_;
+  std::vector<uint8_t> prevChosen2_;
+  const BandMask* mask_ = nullptr;
+  bool dropMaskFeat_ = false; // test: model bez cech z maski
   std::vector<uint8_t> featOk_, prevChosen_;
   bool model_ = false;
   double modelThr_ = 0.5;
@@ -122,7 +127,12 @@ public:
     notes.clear();
     if (pendingRebuild_) { pendingRebuild_ = false; setA4(a4_); }
     const int P = (int)peaks.size();
-    if (!P) { prevSal_.assign(cands_.size(), 0.f); prevChosen_.assign(cands_.size(), 0); featOk_.assign(cands_.size(), 0); return; }
+    if (!P) {
+      prevSal2_ = prevSal_; prevChosen2_ = prevChosen_;
+      prevSal_.assign(cands_.size(), 0.f); prevChosen_.assign(cands_.size(), 0); featOk_.assign(cands_.size(), 0);
+      if (prevSal2_.size() != cands_.size()) { prevSal2_.assign(cands_.size(), 0.f); prevChosen2_.assign(cands_.size(), 0); }
+      return;
+    }
     double aMax = 0;
     for (const auto& p : peaks) aMax = std::max<double>(aMax, p.a);
     v_.assign(P, 0.0);
@@ -216,7 +226,7 @@ public:
   // ---------------------------------------------------------------- cechy kandydatów dla modelu
   // Dla każdej wysokości z co najmniej 2 z 6 pierwszych alikwotów: profil alikwotów, ich wyjaśnienie przez inne nuty, decyzja
   // detektora zachłannego i jej sąsiedztwo (oktawy, kwinty), poprzednia klatka i informacja o uderzeniu. Wejście sieci w gt_model.hpp.
-  static constexpr int NF = 32;
+  static constexpr int NF = 44;
   struct FrameInfo { float onset = 0, sinceOnset = 1, level = 0; };
   FrameInfo fi_;
   void setFrameInfo(const FrameInfo& f) { fi_ = f; }
@@ -226,12 +236,14 @@ public:
   int candMidi(size_t ci) const { return cands_[ci].m; }
   size_t numCands() const { return cands_.size(); }
   void setModel(bool on, double thr) { model_ = on; modelThr_ = thr; }
+  void setMask(const BandMask* m) { mask_ = m; }
 
   void computeFeatures(const std::vector<Peak>& peaks, const std::vector<NoteDet>& notes) {
     const size_t C = cands_.size();
     const int P = (int)peaks.size();
     feat_.assign(C * NF, 0.f); featOk_.assign(C, 0);
     if ((int)prevSal_.size() != (int)C) { prevSal_.assign(C, 0.f); prevChosen_.assign(C, 0); }
+    if ((int)prevSal2_.size() != (int)C) { prevSal2_.assign(C, 0.f); prevChosen2_.assign(C, 0); }
     std::vector<uint8_t> chosen(C, 0), oct(C, 0);
     for (const auto& n : notes) if (n.midi >= o_.lo && n.midi <= o_.hi) { chosen[n.midi - o_.lo] = 1; if (n.octave) oct[n.midi - o_.lo] = 1; }
     // ile wybranych nut wyjaśnia każdy pik
@@ -282,8 +294,27 @@ public:
       f[28] = fi_.onset; f[29] = fi_.sinceOnset; f[30] = fi_.level;
       int rank = 0; while (rank < (int)order.size() && order[rank] > sal[ci]) ++rank;
       f[31] = std::min(10, rank) / 10.f;
+      // model maski: czystość alikwotów (ile w ich pasmach gitary) i jej narastanie (początek nuty)
+      double mm = 0, md = 0; int nm = 0, nh = 0;
+      for (int h = 0; h < 8 && h < (int)c.hf.size(); ++h) {
+        const float mk = mask_ ? mask_->at(c.hf[h]) : 1.f;
+        if (h < 6) f[32 + h] = mk;
+        mm += mk; ++nm;
+        if (h < 4) md += mk - (mask_ ? mask_->prevAt(c.hf[h]) : 1.f);
+      }
+      for (int h = 0; h < 10 && h < (int)c.hf.size(); ++h) if (matched[ci][h] >= 0) ++nh;
+      f[38] = nm ? (float)(mm / nm) : 0.f;
+      f[39] = (float)(md / 4);
+      if (dropMaskFeat_) for (int k = 32; k <= 39; ++k) f[k] = 0.f;
+      f[40] = prevSal2_[ci];
+      f[41] = (float)prevChosen2_[ci];
+      f[42] = sal[ci] / smax - prevSal_[ci];
+      f[43] = nh / 10.f;
     }
-    for (size_t ci = 0; ci < C; ++ci) { prevSal_[ci] = sal[ci] / smax; prevChosen_[ci] = chosen[ci]; }
+    for (size_t ci = 0; ci < C; ++ci) {
+      prevSal2_[ci] = prevSal_[ci]; prevChosen2_[ci] = prevChosen_[ci];
+      prevSal_[ci] = sal[ci] / smax; prevChosen_[ci] = chosen[ci];
+    }
   }
 
   void applyModel(const std::vector<Peak>& peaks, std::vector<NoteDet>& notes);
@@ -570,7 +601,7 @@ inline void MultiPitch::applyModel(const std::vector<Peak>& peaks, std::vector<N
     const Cand& c = cands_[pk.ci];
     const NoteDet* old = nullptr;
     for (const auto& n : notes) if (n.midi == c.m) old = &n;
-    if (old) { NoteDet n = *old; n.score = std::max(n.score, pk.p); out.push_back(n); continue; }
+    if (old) { NoteDet n = *old; n.score = std::max(n.score, pk.p); n.conf = pk.p; out.push_back(n); continue; }
     double num = 0, den = 0, a2 = 0;
     int m6 = 0;
     for (size_t h = 0; h < c.hf.size() && h < 8; ++h) {
@@ -583,7 +614,7 @@ inline void MultiPitch::applyModel(const std::vector<Peak>& peaks, std::vector<N
     }
     NoteDet n;
     n.midi = c.m; n.f = (float)(den > 0 ? num / den : c.f0); n.cents = (float)(1200 * std::log2(n.f / c.f0));
-    n.amp = (float)std::sqrt(a2); n.score = pk.p; n.nh = m6;
+    n.amp = (float)std::sqrt(a2); n.score = pk.p; n.nh = m6; n.conf = pk.p;
     // oktawa innej wybranej nuty: oznaczona jak podwojenie oktawowe (stroik i wybór basu ją pomijają)
     for (const auto& q : picks) if (cands_[q.ci].m == c.m - 12 || cands_[q.ci].m == c.m - 24) n.octave = true;
     out.push_back(n);

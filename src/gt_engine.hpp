@@ -7,6 +7,7 @@
 #include "gt_chords.hpp"
 #include "gt_hand.hpp"
 #include "gt_tracker.hpp"
+#include "gt_mask.hpp"
 
 namespace gt {
 
@@ -42,6 +43,9 @@ struct EngineConfig {
   bool model = true;        // wytrenowany model wybiera nuty spośród kandydatów (gt_model.hpp), przy analizie pliku
   bool modelLive = false;   // ... także na żywo (w pomiarze akordy na żywo gorsze: 95,4 -> 88,9 %)
   double modelThr = -1;    // próg prawdopodobieństwa (-1 = dobrany przy uczeniu, kModelThr)
+  bool mask = true;         // model maski (gt_mask.hpp), przy analizie pliku
+  bool maskClean = true;    // odrzucaj piki w pasmach, gdzie maska < maskThr
+  double maskThr = 0.3;
   bool denoise = true;
   double noiseQ = 0.15;     // kwantyl amplitudy w binie przez wszystkie klatki nagrania = szum tła
   double noiseTK = 3.0;     // pik musi być tyle razy (~9,5 dB) ponad szumem tła
@@ -77,6 +81,7 @@ struct EngineConfig {
   double chCarryTau = 1.2; // waga nut brzmiących z wcześniejszych uderzeń maleje z tą stałą czasu [s]
   double chLate = 0.6;     // spóźnione nuty do tylu [s] po pełnym uderzeniu dopełniają jego akord (0 = wyłączone)
   int chKeepMax = 3;       // uderzenie z mniej niż tyloma nowymi klasami dźwięków, wszystkimi w bieżącym akordzie, nie zmienia akordu
+  double chConfPow = 2.0;  // waga nuty w akordzie ~ pewność^chConfPow
   double chFrameW = 0.6;   // waga dowodu z pojedynczych ramek (wysokości niepotwierdzone jako nuty), względem najsilniejszej nuty
   double chShort = 0.8;    // nuty krótsze niż tyle [s] ważą proporcjonalnie mniej
   double chBassRel = 0.3;  // bas = najniższa nuta o wadze >= tej części najsilniejszej
@@ -170,7 +175,7 @@ public:
     keepDecimated_ = false;
     std::vector<float>().swap(dfull_);
     prevSilent_ = true;
-    noiseAmp_.clear(); noiseFixed_ = false;
+    noiseAmp_.clear(); noiseFixed_ = false; bm_.reset();
     applyModelCfg();
     if (ready_) { mp_.resetLearned(); setReference(cfg_.a4); }
   }
@@ -294,6 +299,7 @@ public:
   }
   bool finished() const { return finished_; }
   MultiPitch& dbgPitch() { return mp_; }
+  FILE* dumpMask_ = nullptr; // zrzut cech pasm do uczenia modelu maski (tools/train_mask.py)
   FILE* dumpFile_ = nullptr; // zrzut cech kandydatów do uczenia modelu (tools/train_model.py)
 
   const std::vector<NoteEvent2>& events() const { return tracker_.events; }
@@ -318,6 +324,7 @@ private:
   Ring ring_;
   OnsetDetector onset_;
   Spectrum spec_;
+  BandMask bm_;
   // szum tła z wielu klatek
   std::vector<double> noiseAmp_;            // amplituda szumu na bin (gotowa)
   bool noiseFixed_ = false;                 // z całego nagrania (plik) zamiast statystyki minimów
@@ -499,6 +506,7 @@ private:
     fr.onset = onsetT >= 0;
     if (onsetT >= 0) lastOnset_ = onsetT;
     dets_.clear(); peaks_.clear();
+    if (silent && cfg_.mask && keepDecimated_) bm_.silent();
     if (!silent) {
       spec_.compute(xbuf_.data());
       PeakOptions po;
@@ -506,6 +514,26 @@ private:
       po.minAmp = std::pow(10.0, gateEff_ / 20) * 0.35;
       if (cfg_.denoise && noiseFixed_ && (int)noiseAmp_.size() == spec_.bins()) { po.tnoise = &noiseAmp_; po.tK = cfg_.noiseTK; }
       spec_.pickPeaks(po, peaks_);
+      // model maski: ile w każdym paśmie jest gitary; piki w pasmach zdominowanych przez otoczenie odpadają
+      if (cfg_.mask && keepDecimated_) { // tylko analiza pliku: maska uczona z widmem szumu z całego nagrania (na żywo: akordy 95 -> 36 %)
+        static const std::vector<double> none;
+        bm_.compute(spec_, noiseFixed_ ? noiseAmp_ : none, peaks_, (float)clampd((levelDb - gateEff_) / 40.0, 0, 1.5));
+        if (dumpMask_) {
+          const auto& F = bm_.features();
+          for (int b = 0; b < BandMask::NB; ++b) {
+            if (F[b * BandMask::NF] < -8.0 / 6.0) continue; // pasma prawie puste
+            float row[2 + BandMask::NF];
+            row[0] = (float)(t - 0.5 * wSec); row[1] = (float)b;
+            for (int k = 0; k < BandMask::NF; ++k) row[2 + k] = F[b * BandMask::NF + k];
+            fwrite(row, sizeof(float), 2 + BandMask::NF, dumpMask_);
+          }
+        }
+        if (kMaskReady && cfg_.maskClean) {
+          size_t w = 0;
+          for (size_t i = 0; i < peaks_.size(); ++i) if (bm_.at(peaks_[i].f) >= cfg_.maskThr) peaks_[w++] = peaks_[i];
+          peaks_.resize(w);
+        }
+      }
       if (cfg_.autoTune && !prepassed_) liveTuning();
       if (cfg_.prior > 1.0) {
         // historia: nuty brzmiące teraz albo zakończone w ostatnich priorSec sekundach
@@ -520,6 +548,7 @@ private:
         fi.sinceOnset = lastOnset_ < 0 ? 1.f : (float)clampd(t - lastOnset_, 0, 1);
         fi.level = (float)clampd((levelDb - gateEff_) / 40.0, 0, 1.5);
         mp_.setFrameInfo(fi);
+        mp_.setMask(cfg_.mask && keepDecimated_ ? &bm_ : nullptr);
       }
       mp_.detect(peaks_, dets_);
       if (dumpFile_) {
@@ -931,7 +960,9 @@ private:
         const double amp = std::pow(10.0, (e.vel - 64) / 28.0); // odwrotność NoteTracker::velocity (amplituda względna)
         // krótkie nuty (zwykle duchy albo urwane ogony) ważą mniej
         const double dur = std::min(1.0, (e.t1 - e.t0) / cfg_.chShort);
-        const double x = std::sqrt(amp) * dur * (fresh ? 1.0 : std::exp(-(a - e.t0) / cfg_.chCarryTau));
+        // pewność nuty (przy modelu: średnie prawdopodobieństwo); niepewne nuty ważą mniej
+        const double cf = std::pow(clampd(e.conf, 0.05, 1.0), cfg_.chConfPow);
+        const double x = std::sqrt(amp) * dur * cf * (fresh ? 1.0 : std::exp(-(a - e.t0) / cfg_.chCarryTau));
         const int pc = e.midi % 12;
         if (fresh) wf[pc] += x;
         w[pc] += x;

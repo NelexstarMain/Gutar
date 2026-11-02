@@ -26,6 +26,9 @@ int main(int argc, char** argv) {
     else if (!strcmp(argv[i], "--no-joint")) cfg.joint = false;
     else if (!strcmp(argv[i], "--no-context")) cfg.context = false;
     else if (!strcmp(argv[i], "--no-denoise")) cfg.denoise = false;
+    else if (!strcmp(argv[i], "--no-mask")) cfg.mask = false;
+    else if (!strcmp(argv[i], "--no-maskclean")) cfg.maskClean = false;
+    else if (!strcmp(argv[i], "--maskthr") && i + 1 < argc) cfg.maskThr = atof(argv[++i]);
     else if (!strcmp(argv[i], "--model")) cfg.model = true;
     else if (!strcmp(argv[i], "--model-live")) cfg.modelLive = true;
     else if (!strcmp(argv[i], "--no-model")) cfg.model = false;
@@ -57,6 +60,7 @@ int main(int argc, char** argv) {
     else if (!strcmp(argv[i], "--chlate") && i + 1 < argc) cfg.chLate = atof(argv[++i]);
     else if (!strcmp(argv[i], "--live-notes")) cfg.liveNotes = true;
     else if (!strcmp(argv[i], "--chframe") && i + 1 < argc) cfg.chFrameW = atof(argv[++i]);
+    else if (!strcmp(argv[i], "--chconf") && i + 1 < argc) cfg.chConfPow = atof(argv[++i]);
     else if (!strcmp(argv[i], "--chfresh") && i + 1 < argc) cfg.chFreshMin = atoi(argv[++i]);
     else if (!strcmp(argv[i], "--no-resplit")) cfg.resplit = false;
     else if (!strcmp(argv[i], "--no-segshared")) cfg.segShared = false;
@@ -97,6 +101,8 @@ int main(int argc, char** argv) {
   eng.configure(cfg);
   eng.begin(fs);
   if (getenv("GT_DUMP")) eng.dumpFile_ = fopen(getenv("GT_DUMP"), "wb");
+  if (getenv("GT_NOMASKFEAT")) eng.dbgPitch().dropMaskFeat_ = true;
+  if (getenv("GT_DUMPM")) eng.dumpMask_ = fopen(getenv("GT_DUMPM"), "wb");
   if (jt0 >= 0) eng.dbgPitch().jointTol0_ = jt0;
   if (jt1 >= 0) eng.dbgPitch().jointTol1_ = jt1;
   if (jh1 >= 0) eng.dbgPitch().jointH1_ = jh1;
@@ -105,6 +111,7 @@ int main(int argc, char** argv) {
   for (size_t i = 0; i < x.size(); i += chunk) eng.push(x.data() + i, (int)std::min(chunk, x.size() - i));
   eng.finish();
   if (eng.dumpFile_) fclose(eng.dumpFile_);
+  if (eng.dumpMask_) fclose(eng.dumpMask_);
   const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
 
   FILE* f = fopen(argv[3], "w");

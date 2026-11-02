@@ -4,14 +4,14 @@ Rozpoznawanie nut, akordów i stroju gitary na żywo z mikrofonu albo z pliku au
 Cała analiza dźwięku jest napisana w **C++17** (`src/`), kompilowana do **WebAssembly** i osadzona
 w jednym pliku HTML. Ten plik działa jako artefakt i jako samodzielna aplikacja offline.
 
-* `dist/gitara-sluchacz.html`: gotowa aplikacja (jeden plik, ok. 3 MB, mikrofon działa po otwarciu z dysku)
+* `dist/gitara-sluchacz.html`: gotowa aplikacja (jeden plik, ok. 4,4 MB, mikrofon działa po otwarciu z dysku)
 * `dist/gt_engine.wasm`: sam silnik (ok. 400 KB)
 
 ## Co potrafi
 
 * wielogłosowe wykrywanie nut (grzebień alikwotów + kasowanie), z podwojeniami oktawowymi (E2+E3),
-* **wytrenowany model (AI) wybiera nuty**: przy analizie nagrania mała sieć neuronowa (`src/gt_model.hpp`, 1,6 tys. wag, uczona
-  na korpusie i na prawdziwych nagraniach GuitarSet) ocenia każdą kandydującą wysokość w każdej klatce: czy to fala tej gitary, czy
+* **wytrenowane modele (AI)**: przy analizie nagrania model maski ocenia, ile w każdym paśmie jest gitary, a ile otoczenia (szum, stuki,
+  tony), a model nut (gen 4: zespół 4 sieci, uczony na losowych środowiskach, korpusie i prawdziwych nagraniach GuitarSet) ocenia każdą kandydującą wysokość w każdej klatce: czy to fala tej gitary, czy
   szum, odbicie albo alikwot innej struny; do tego **odszumianie**: widmo szumu tła liczone z wszystkich klatek nagrania,
 * **najpierw nuty, potem akordy**: po analizie nagrania akord jest składany z gotowej listy nut (uderzenia = grupy początków nut,
   spóźnione struny dopełniają akord swojego uderzenia, nuty pasujące do bieżącego akordu nie zmieniają jego nazwy); 20 typów, chwyty z basem, np. `C/G`,
@@ -57,20 +57,20 @@ dudnienie polaryzacji, ślizg wysokości przy ataku, rezonans pudła, pogłos, s
 `tools/run_bench.sh` uruchamia **oryginalny silnik JS** (`tools/baseline/`) i nowy silnik na tych samych plikach i liczy te same metryki
 (`tools/score.py`). Parametry były strojone na zbiorze `dev`; poniżej zbiór kontrolny `holdout` (64 nagrania, inne ziarna).
 
-| metryka (holdout) | oryginał JS | poprzedni C++ | C++ bez modelu | **C++ z modelem** |
-|---|---:|---:|---:|---:|
-| akord rozpoznany poprawnie (uderzenia) | 90,2 % | 96,3 % | 98,5 % | **98,8 %** |
-| akord poprawny w ramkach okna oceny | 87,0 % | 95,5 % | 97,4 % | **98,4 %** |
-| migotanie etykiety akordu (zmian/akord) | 0,48 | 0,13 | 0,09 | **0,03** |
-| akord przy rozstrojonej gitarze (−35…+32¢) | 64,8 % | **100 %** | 98,1 % | 98,1 % |
-| nuty (F1 obecności dźwięku w ramkach) | 74,2 % | 81,0 % | 81,6 % | **91,6 %** |
-| nuty (F1 obecności z listy nut) | | 81,5 % | 82,4 % | **91,6 %** |
-| początki nut (F1, tol. 120 ms) | 70,0 % | 79,5 % | 80,5 % | **86,7 %** |
-| początki nut (F1, tol. 50 ms, jak w publikacjach) | | 54,0 % | 73,5 % | **78,7 %** |
-| pokrycie słyszalnego czasu nuty | 64,8 % | 74,3 % | 75,7 % | **89,9 %** |
-| stroik: trafiony dźwięk (melodie) | 90,5 % | 97,6 % | 96,9 % | **98,5 %** |
-| stroik: mediana błędu częstotliwości | 0,72¢ | 0,30¢ | 0,30¢ | 0,30¢ |
-| czas analizy / czas nagrania (natywnie) | 0,033 | **0,021** | 0,06 | 0,07 |
+| metryka (holdout) | oryginał JS | poprzedni C++ | C++ bez modelu | model gen 3 | **model gen 4** |
+|---|---:|---:|---:|---:|---:|
+| akord rozpoznany poprawnie (uderzenia) | 90,2 % | 96,3 % | 98,5 % | **98,8 %** | 98,5 % |
+| akord poprawny w ramkach okna oceny | 87,0 % | 95,5 % | 97,4 % | **98,4 %** | 98,3 % |
+| migotanie etykiety akordu (zmian/akord) | 0,48 | 0,13 | 0,09 | 0,03 | **0,02** |
+| akord przy rozstrojonej gitarze (−35…+32¢) | 64,8 % | **100 %** | 98,1 % | 98,1 % | 98,1 % |
+| nuty (F1 obecności dźwięku w ramkach) | 74,2 % | 81,0 % | 81,6 % | 91,6 % | **92,1 %** |
+| nuty (F1 obecności z listy nut) | | 81,5 % | 82,4 % | 91,6 % | **92,0 %** |
+| początki nut (F1, tol. 120 ms) | 70,0 % | 79,5 % | 80,5 % | 86,7 % | **87,6 %** |
+| początki nut (F1, tol. 50 ms, jak w publikacjach) | | 54,0 % | 73,5 % | 78,7 % | **79,6 %** |
+| pokrycie słyszalnego czasu nuty | 64,8 % | 74,3 % | 75,7 % | 89,9 % | **90,2 %** |
+| stroik: trafiony dźwięk (melodie) | 90,5 % | 97,6 % | 96,9 % | **98,5 %** | **98,5 %** |
+| stroik: mediana błędu częstotliwości | 0,72¢ | 0,30¢ | 0,30¢ | 0,30¢ | 0,30¢ |
+| czas analizy / czas nagrania (WebAssembly w node) | | 0,03 | | | 0,05 |
 
 Model działa przy analizie nagrania (plik, demo i ponowna analiza po zatrzymaniu mikrofonu). Na żywo z mikrofonu zostaje
 dotychczasowy detektor: z modelem akordy na żywo spadały (95,4 → 88,9 %, model uczony na analizie plików).
@@ -89,20 +89,59 @@ Korpus syntetyczny pokazuje różnice między wersjami, ale nie dokładność na
 akordy z partytury), skryptem `tools/guitarset_eval.py` z metrykami **mir_eval** (te same co w publikacjach). Strojone na graczach
 00–02, poniżej gracze 03–05:
 
-| GuitarSet, gracze 03–05 | poprzedni C++ | C++ bez modelu | **C++ z modelem** | bez modelu, okno 186 ms |
-|---|---:|---:|---:|---:|
-| nuty, F1 początków (50 ms, ±50¢), wszystkie nagrania | 47,7 % | 56,2 % | **61,7 %** | 57,8 % |
-| … precyzja / czułość | 66,5 / 39,8 % | 73,4 / 48,7 % | **80,5 / 52,4 %** | 75,7 / 50,0 % |
-| nuty z początkiem i końcem | 22,7 % | 24,9 % | 26,6 % | **28,3 %** |
-| obecność nut w siatce 50 ms | 63,3 % | 64,1 % | **70,6 %** | 65,9 % |
-| nuty, melodie (solo) | 61,1 % | 69,4 % | **72,9 %** | 71,0 % |
-| nuty, akompaniament | 34,3 % | 42,9 % | **50,6 %** | 44,6 % |
-| akompaniament: prima akordu | 40,4 % | 45,7 % | **49,2 %** | 45,7 % |
-| akompaniament: akord dur/moll (mir_eval majmin) | 34,0 % | 42,3 % | **46,6 %** | 42,8 % |
+| GuitarSet, gracze 03–05 | poprzedni C++ | C++ bez modelu | model gen 3 | **model gen 4** | bez modelu, okno 186 ms |
+|---|---:|---:|---:|---:|---:|
+| nuty, F1 początków (50 ms, ±50¢), wszystkie nagrania | 47,7 % | 56,2 % | 61,7 % | **62,5 %** | 57,8 % |
+| … precyzja / czułość | 66,5 / 39,8 % | 73,4 / 48,7 % | 80,5 / 52,4 % | **81,0 / 53,2 %** | 75,7 / 50,0 % |
+| nuty z początkiem i końcem | 22,7 % | 24,9 % | 26,6 % | 26,9 % | **28,3 %** |
+| obecność nut w siatce 50 ms | 63,3 % | 64,1 % | 70,6 % | **71,5 %** | 65,9 % |
+| nuty, melodie (solo) | 61,1 % | 69,4 % | 72,9 % | **73,0 %** | 71,0 % |
+| nuty, akompaniament | 34,3 % | 42,9 % | 50,6 % | **52,1 %** | 44,6 % |
+| akompaniament: prima akordu | 40,4 % | 45,7 % | 49,2 % | **50,0 %** | 45,7 % |
+| akompaniament: akord dur/moll (mir_eval majmin) | 34,0 % | 42,3 % | 46,6 % | **48,2 %** | 42,8 % |
 
 (Kolumna „bez modelu” zawiera już odszumianie; liczby bez modelu różnią się od poprzedniej wersji tego README o ±0,3 pkt.)
 
-### Model (AI) i odszumianie
+### Generacja 4: losowe środowiska, model maski i model nut
+
+**Środowiska** (`tools/gen_env.cpp`). Każde nagranie losuje wszystko od nowa, żeby model nie mógł nauczyć się jednego szumu ani
+jednego utworu: treść (uderzenia w losowe chwyty możliwe do zagrania, także stłumione i niepełne; arpeggia o losowym wzorze,
+tempie i wybrzmiewaniu, czasem dwie struny naraz; losowe nuty z procesu Poissona do 4 naraz; melodie legato i staccato),
+dynamikę (poziom bazowy, crescendo/decrescendo, akcenty, bardzo ciche nuty), pokój (pogłos 0,15–1,6 s), „kąt mikrofonu” (1–4 losowe
+filtry, wczesne odbicie jako filtr grzebieniowy, nachylenie widma) oraz otoczenie: szum o losowej barwie (od brązowego do niebieskiego,
+czasem falujący), 1–5 stałych tonów z harmonicznymi (wentylator, silnik), brum 50/60 Hz, stuki (wygasające rezonanse o losowej
+wysokości, każdy z innego kierunku, od −36 do +4 dB względem szczytu gitary), kliknięcia, hałas przerywany w rytmie mowy; SNR 3–45 dB,
+poziom nagrania od −32 do −1 dBFS. Zapisuje osobno mikrofon i samą gitarę (do uczenia maski). Uczenie: 240 nagrań, test: 60 innych ziaren.
+
+| nowe środowiska (60 nagrań testowych) | bez modelu | model gen 3 | **model gen 4** |
+|---|---:|---:|---:|
+| nuty (F1 obecności w ramkach) | 64,2 % | 68,9 % | **70,9 %** |
+| nuty (F1 z listy nut) | 64,3 % | 68,6 % | **70,3 %** |
+| początki nut (120 ms / 50 ms) | 54,9 / 50,3 % | 58,6 / 53,8 % | **60,6 / 55,9 %** |
+| pokrycie słyszalnego czasu nuty | 46,3 % | 52,1 % | **53,1 %** |
+
+**Model maski** (`src/gt_mask.hpp`, wagi `src/gt_maskmodel.hpp`, uczenie `tools/train_mask.py`). Widmo w 156 pasmach co pół półtonu
+(55 Hz – 5 kHz); dla każdego pasma 15 cech (energia, kontrast z sąsiednimi pasmami, dwie poprzednie klatki, szum lokalny i szum tła,
+pasma o oktawę i duodecymę obok, czy jest pik) i sieć 15 → 24 → 12 → 1, która przewiduje, jaka część energii pasma to gitara
+(etykieta: idealna maska z osobno zapisanej gitary i otoczenia). Na 60 nagraniach testowych: zgodność decyzji gitara/otoczenie 84,8 %,
+usuwa 77 % pasm zdominowanych przez otoczenie i 4,8 % pasm gitary. Użycie: (1) piki w pasmach z maską < 0,3 odpadają, (2) model nut
+dostaje maskę na 6 pierwszych alikwotach kandydata, jej średnią i jej narastanie względem poprzedniej klatki (dowód początku nuty).
+Samo czyszczenie pików nie zmienia wyników (±0,1 pkt: usuwane piki i tak nie wpływały na decyzje); zysk daje maska jako dowód dla modelu
+nut: bez cech z maski gen 4 ma w środowiskach −0,5 pkt i w akompaniamencie GuitarSet −0,7 pkt (w melodiach +0,5 pkt).
+
+**Model nut gen 4** (`src/gt_model.hpp`). 44 cechy (32 jak w gen 3 + maska + dwie poprzednie klatki, zmiana siły, liczba alikwotów),
+trzy sieci 44 → 64 → 32 → 1 z różnych ziaren i sieć gen 3 (na 32 pierwszych cechach); wynik = 0,4 · gen 3 + 0,6 · średnia gen 4, próg 0,40.
+Dane: środowiska (240), korpusy `dev`, 10000, 15000 i GuitarSet 00–02 (walidacja: funk gracza 02); wagi źródeł: GuitarSet 0,5,
+korpus 0,25, środowiska 0,25. Uczenie ok. 2 min na CPU.
+Kolejne wersje (zbiory kontrolne): 4a (jedna sieć, źródła po równo): środowiska i akompaniament lepsze od gen 3, ale melodie GuitarSet
+72,9 → 71,5 % i akordy korpusu 98,8 → 97,5 %; 4b (zespół 3 sieci, GuitarSet 0,5): melodie 71,8 %; 4c (więcej GuitarSet do uczenia,
+próg 0,40): 72,1 %; 4c + pewność nut w akordach: akordy korpusu 97,5 → 97,9 %; zespół z gen 3 (25 %, potem 40 %): melodie 73,0 %,
+akordy korpusu 98,5 %. Gen 4 jest lepsza od gen 3 we wszystkich miarach GuitarSet i środowisk; na korpusie kontrolnym akordy
+98,5 vs 98,8 % (jedno uderzenie na 325).
+**Pewność nut w akordach**: każda nuta pamięta średnie prawdopodobieństwo modelu ze swoich klatek; przy składaniu akordu waży
+pewność². Maska i model działają przy analizie nagrania; na żywo maska (uczona z widmem szumu z całego nagrania) psuła akordy (95 → 36 %).
+
+### Model (AI) i odszumianie (generacja 3)
 
 **Model** (`src/gt_model.hpp`, uczony skryptem `tools/train_model.py`). Detektor zachłanny zostaje, ale nie decyduje sam: dla każdej
 wysokości, która ma w klatce co najmniej 2 z 6 pierwszych alikwotów, liczone są 32 cechy (siła 10 alikwotów, czy wyjaśniają je
@@ -215,6 +254,11 @@ python3 tools/guitarset_eval.py annotation wyniki --by-style
 # ponowne uczenie modelu (zrzuty cech + prawda; szczegóły w nagłówku tools/train_model.py)
 for f in korpus/*.wav; do GT_DUMP=zrzuty/$(basename $f .wav).bin ./gt_cli analyze $f /dev/null; done
 python3 tools/train_model.py --syn zrzuty korpus --gs zrzuty_gs annotation --out src/gt_model.hpp
+# gen 4: środowiska, maska i model nut
+g++ -std=c++17 -O2 tools/gen_env.cpp -o gen_env && ./gen_env env_train 100000 240 && ./gen_env env_test 900000 60
+for f in env_train/env_*[0-9].wav; do GT_DUMPM=zrzuty_maski/$(basename $f .wav).bin ./gt_cli analyze $f /dev/null; done
+python3 tools/train_mask.py --train env_train zrzuty_maski --test env_test zrzuty_maski_test
+python3 tools/train_model.py --env zrzuty_env env_train --syn ... --gs ... --ensemble 3 --weights "korpus=0.25,środowiska=0.25,GuitarSet=0.5"
 ```
 
 ## Układ kodu
@@ -229,7 +273,9 @@ python3 tools/train_model.py --syn zrzuty korpus --gs zrzuty_gs annotation --out
 | `src/gt_engine.hpp` | silnik: strumień → ramki, strój, próg, akordy, stroik |
 | `src/gt_fingering.hpp` | struny i progi, ograniczenia fizyczne ręki |
 | `src/gt_hand.hpp` | śledzenie ręki: filtr nut niemożliwych do zagrania, strefa ręki |
-| `src/gt_model.hpp` | wagi modelu oceniającego kandydatów na nuty (generowane przez `tools/train_model.py`) |
+| `src/gt_model.hpp` | wagi modelu nut gen 4 (generowane przez `tools/train_model.py`) |
+| `src/gt_mask.hpp`, `src/gt_maskmodel.hpp` | model maski: ile w każdym paśmie jest gitary (wagi z `tools/train_mask.py`) |
+| `tools/gen_env.cpp` | generator losowych środowisk (gitara + pokój + mikrofon + otoczenie, osobno sama gitara) |
 | `src/gt_export.hpp` | MIDI, WAV, ZIP, tabulatura, JSON |
 | `src/gt_synth.hpp` | syntezator szarpanej struny (odsłuch i korpus testowy) |
 | `src/wasm_api.cpp` | interfejs C dla przeglądarki |

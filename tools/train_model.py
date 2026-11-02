@@ -2,7 +2,7 @@
 """train_model.py - uczy model oceniający kandydatów na nuty i zapisuje wagi do src/gt_model.hpp.
 
 Dane: zrzuty cech z silnika (GT_DUMP=plik.bin gt_cli analyze nagranie.wav wynik.json), po jednym pliku .bin na nagranie;
-wiersz = [czas środka okna, midi, 32 cechy] (float32). Etykieta: czy ta wysokość brzmi w tej chwili według prawdy
+wiersz = [czas środka okna, midi, 44 cechy] (float32). Etykieta: czy ta wysokość brzmi w tej chwili według prawdy
 (korpus syntetyczny: *.truth.json; GuitarSet: *.jams). Klatki bliżej niż 60 ms od początku i 100 ms od końca nuty są pomijane
 (niejednoznaczne: okno analizy zachodzi na granicę).
 
@@ -12,13 +12,13 @@ Użycie:
   Plik prawdy szukany jest pod nazwą zrzutu (np. zrzut dev_strum_clean_00.bin -> dev_strum_clean_00.truth.json); zrzuty z trybu
   na żywo mają przedrostek "L_" (GuitarSet) albo "<zbiór>L_" (korpus) i trzeba im podlinkować tę samą prawdę.
 
-Model: sieć 32 -> 32 -> 16 -> 1 (ReLU, sigmoid), Adam, entropia krzyżowa; każde źródło (korpus, GuitarSet) waży tyle samo.
+Model: sieć 44 -> 64 -> 32 -> 1 (--hidden) (ReLU, sigmoid), Adam, entropia krzyżowa; każde źródło (korpus, GuitarSet) waży tyle samo.
 Próg decyzji dobierany na zbiorze walidacyjnym (maksimum F1 obecności nut w klatkach).
 """
 import sys, os, glob, json, argparse, zlib
 import numpy as np
 
-NF = 32
+NF = 44
 
 
 def load_truth_syn(path):
@@ -113,6 +113,11 @@ class MLP:
             p_ -= lr * mh / (np.sqrt(vh) + 1e-8)
 
 
+class Ensemble:
+    def __init__(self, models): self.models = models
+    def predict(self, x): return np.mean([m.predict(x) for m in self.models], axis=0)
+
+
 def f1_at(p, y, thr):
     tp = np.sum((p >= thr) & (y > 0)); fp = np.sum((p >= thr) & (y == 0)); fn = np.sum((p < thr) & (y > 0))
     return 2 * tp / max(1, 2 * tp + fp + fn), tp / max(1, tp + fp), tp / max(1, tp + fn)
@@ -121,22 +126,25 @@ def f1_at(p, y, thr):
 def export(model, thr, path, info):
     def arr(name, a):
         return 'static const float %s[%d] = {%s};\n' % (name, a.size, ', '.join('%.7gf' % v for v in a.ravel()))
-    sizes = [model.W[0].shape[0]] + [W.shape[1] for W in model.W]
+    models = model.models if isinstance(model, Ensemble) else [model]
     s = ('// gt_model.hpp - wagi modelu oceniającego kandydatów na nuty. WYGENEROWANE przez tools/train_model.py, nie edytować.\n'
-         '// ' + info + '\n#pragma once\nnamespace gt {\nstatic constexpr bool kModelReady = true;\n'
+         '// ' + info + '\n#pragma once\n#include <cmath>\nnamespace gt {\nstatic constexpr bool kModelReady = true;\n'
          'static constexpr float kModelThr = %.4ff;\n' % thr)
-    for i, (W, b) in enumerate(zip(model.W, model.b)):
-        s += arr('kW%d' % i, W) + arr('kB%d' % i, b)
-    s += 'inline float modelPredict(const float* x) {\n'
-    prev = 'x'
-    for i in range(len(model.W)):
-        a, b = sizes[i], sizes[i + 1]
-        last = i == len(model.W) - 1
-        s += '  float h%d[%d];\n  for (int j = 0; j < %d; ++j) { float z = kB%d[j]; for (int i = 0; i < %d; ++i) z += %s[i] * kW%d[i * %d + j]; h%d[j] = %s; }\n' % (
-            i, b, b, i, a, prev, i, b, i, 'z' if last else 'z > 0 ? z : 0')
-        prev = 'h%d' % i
-    s += '  const float z = %s[0] < -30 ? -30 : (%s[0] > 30 ? 30 : %s[0]);\n  return 1.f / (1.f + std::exp(-z));\n}\n} // namespace gt\n' % (prev, prev, prev)
-    open(path, 'w').write(s.replace('#pragma once\n', '#pragma once\n#include <cmath>\n'))
+    body = ''
+    for m_i, m in enumerate(models):
+        sizes = [m.W[0].shape[0]] + [W.shape[1] for W in m.W]
+        for i, (W, b) in enumerate(zip(m.W, m.b)):
+            s += arr('kW%d_%d' % (m_i, i), W) + arr('kB%d_%d' % (m_i, i), b)
+        body += '  {\n'
+        prev = 'x'
+        for i in range(len(m.W)):
+            a, b = sizes[i], sizes[i + 1]; last = i == len(m.W) - 1
+            body += '    float h%d[%d];\n    for (int j = 0; j < %d; ++j) { float z = kB%d_%d[j]; for (int i = 0; i < %d; ++i) z += %s[i] * kW%d_%d[i * %d + j]; h%d[j] = %s; }\n' % (
+                i, b, b, m_i, i, a, prev, m_i, i, b, i, 'z' if last else 'z > 0 ? z : 0')
+            prev = 'h%d' % i
+        body += '    const float z = %s[0] < -30 ? -30 : (%s[0] > 30 ? 30 : %s[0]);\n    sum += 1.f / (1.f + std::exp(-z));\n  }\n' % (prev, prev, prev)
+    s += 'inline float modelPredict(const float* x) {\n  float sum = 0;\n' + body + '  return sum / %d.f;\n}\n} // namespace gt\n' % len(models)
+    open(path, 'w').write(s)
 
 
 def main():
@@ -144,6 +152,10 @@ def main():
     ap.add_argument('--syn', nargs=2); ap.add_argument('--gs', nargs=2); ap.add_argument('--val-gs', default='02_')
     ap.add_argument('--out', default=os.path.join(os.path.dirname(__file__), '..', 'src', 'gt_model.hpp'))
     ap.add_argument('--epochs', type=int, default=12); ap.add_argument('--seed', type=int, default=1)
+    ap.add_argument('--weights', default='', help='np. korpus=0.25,środowiska=0.25,GuitarSet=0.5')
+    ap.add_argument('--ensemble', type=int, default=1, help='ile sieci (różne ziarna), wynik = średnia')
+    ap.add_argument('--drop', default='', help='zakres cech zerowanych przy uczeniu, np. 32-39 (test wpływu)')
+    ap.add_argument('--hidden', default='64,32'); ap.add_argument('--env', nargs=2, help='zrzuty i katalog tools/gen_env')
     a = ap.parse_args()
     rng = np.random.default_rng(a.seed)
     parts = []
@@ -151,26 +163,36 @@ def main():
         X, Y, F = load_set(a.syn[0], a.syn[1], 'syn')
         val = np.array([zlib.crc32(f.encode()) % 5 == 0 for f in F])
         parts.append(('korpus', X, Y, val))
+    if a.env:
+        X, Y, F = load_set(a.env[0], a.env[1], 'syn')
+        val = np.array([zlib.crc32(f.encode()) % 5 == 0 for f in F])
+        parts.append(('środowiska', X, Y, val))
     if a.gs:
         X, Y, F = load_set(a.gs[0], a.gs[1], 'gs')
         val = np.array([f.startswith(a.val_gs) for f in F])
         parts.append(('GuitarSet', X, Y, val))
+    if a.drop:
+        lo, hi = (int(x) for x in a.drop.split('-'))
+        for _, X, Y, v in parts: X[:, lo:hi + 1] = 0
     Xtr = np.concatenate([X[~v] for _, X, Y, v in parts]); Ytr = np.concatenate([Y[~v] for _, X, Y, v in parts])
-    Wtr = np.concatenate([np.full((~v).sum(), 1.0 / (~v).sum(), np.float32) for _, X, Y, v in parts])
+    sw = {k: float(x) for k, x in (kv.split('=') for kv in a.weights.split(','))} if a.weights else {}
+    Wtr = np.concatenate([np.full((~v).sum(), sw.get(name, 1.0) / (~v).sum(), np.float32) for name, X, Y, v in parts])
     for name, X, Y, v in parts:
         print('%-10s wierszy %8d  (walidacja %d)  dodatnich %.1f %%' % (name, len(X), v.sum(), 100 * Y.mean()))
-    model = MLP([NF, 32, 16, 1], rng)
-    n, bs = len(Xtr), 4096
-    for ep in range(a.epochs):
-        idx = rng.permutation(n)
-        lr = 2e-3 if ep < a.epochs * 0.6 else 5e-4
-        for i in range(0, n, bs):
-            j = idx[i:i + bs]
-            model.step(Xtr[j], Ytr[j], Wtr[j] * n, lr)
-        msg = []
-        for name, X, Y, v in parts:
-            p = model.predict(X[v]); msg.append('%s F1 %.3f' % (name, f1_at(p, Y[v], 0.5)[0]))
-        print('epoka %2d  ' % ep + '  '.join(msg))
+    models = []
+    for k in range(a.ensemble):
+        rng = np.random.default_rng(a.seed + 101 * k)
+        model = MLP([NF] + [int(h) for h in a.hidden.split(',')] + [1], rng)
+        n, bs = len(Xtr), 4096
+        for ep in range(a.epochs):
+            idx = rng.permutation(n)
+            lr = 2e-3 if ep < a.epochs * 0.6 else 5e-4
+            for i in range(0, n, bs):
+                j = idx[i:i + bs]
+                model.step(Xtr[j], Ytr[j], Wtr[j] * n, lr)
+        models.append(model)
+        print('sieć %d: ' % k + '  '.join('%s F1 %.3f' % (name, f1_at(model.predict(X[v]), Y[v], 0.5)[0]) for name, X, Y, v in parts))
+    model = Ensemble(models)
     # próg: maksimum średniego F1 na walidacji obu źródeł
     best = (0, 0.5)
     for thr in np.arange(0.2, 0.81, 0.025):
