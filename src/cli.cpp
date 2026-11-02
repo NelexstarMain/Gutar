@@ -25,6 +25,13 @@ int main(int argc, char** argv) {
     else if (!strcmp(argv[i], "--no-hand")) cfg.hand = false;
     else if (!strcmp(argv[i], "--no-joint")) cfg.joint = false;
     else if (!strcmp(argv[i], "--no-context")) cfg.context = false;
+    else if (!strcmp(argv[i], "--no-denoise")) cfg.denoise = false;
+    else if (!strcmp(argv[i], "--model")) cfg.model = true;
+    else if (!strcmp(argv[i], "--model-live")) cfg.modelLive = true;
+    else if (!strcmp(argv[i], "--no-model")) cfg.model = false;
+    else if (!strcmp(argv[i], "--mthr") && i + 1 < argc) cfg.modelThr = atof(argv[++i]);
+    else if (!strcmp(argv[i], "--noiseq") && i + 1 < argc) cfg.noiseQ = atof(argv[++i]);
+    else if (!strcmp(argv[i], "--noisetk") && i + 1 < argc) cfg.noiseTK = atof(argv[++i]);
     else if (!strcmp(argv[i], "--prior") && i + 1 < argc) cfg.prior = atof(argv[++i]);
     else if (!strcmp(argv[i], "--priorsec") && i + 1 < argc) cfg.priorSec = atof(argv[++i]);
     else if (!strcmp(argv[i], "--no-ctxfill")) cfg.ctxFill = false;
@@ -89,6 +96,7 @@ int main(int argc, char** argv) {
   Engine eng;
   eng.configure(cfg);
   eng.begin(fs);
+  if (getenv("GT_DUMP")) eng.dumpFile_ = fopen(getenv("GT_DUMP"), "wb");
   if (jt0 >= 0) eng.dbgPitch().jointTol0_ = jt0;
   if (jt1 >= 0) eng.dbgPitch().jointTol1_ = jt1;
   if (jh1 >= 0) eng.dbgPitch().jointH1_ = jh1;
@@ -96,6 +104,7 @@ int main(int argc, char** argv) {
   const size_t chunk = live ? 1024 : 8192;
   for (size_t i = 0; i < x.size(); i += chunk) eng.push(x.data() + i, (int)std::min(chunk, x.size() - i));
   eng.finish();
+  if (eng.dumpFile_) fclose(eng.dumpFile_);
   const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
 
   FILE* f = fopen(argv[3], "w");

@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <map>
 #include "gt_spectrum.hpp"
+#include "gt_model.hpp"
 
 namespace gt {
 
@@ -78,6 +79,10 @@ public:
   }
 
   double a4() const { return a4_; }
+  std::vector<float> feat_, prevSal_, prob_;
+  std::vector<uint8_t> featOk_, prevChosen_;
+  bool model_ = false;
+  double modelThr_ = 0.5;
   std::vector<uint8_t> prior_;  // 1 = wysokość brzmiała niedawno
   double priorBoost_ = 1.0;
   void setPrior(const std::vector<int>& midis, double boost) {
@@ -117,7 +122,7 @@ public:
     notes.clear();
     if (pendingRebuild_) { pendingRebuild_ = false; setA4(a4_); }
     const int P = (int)peaks.size();
-    if (!P) return;
+    if (!P) { prevSal_.assign(cands_.size(), 0.f); prevChosen_.assign(cands_.size(), 0); featOk_.assign(cands_.size(), 0); return; }
     double aMax = 0;
     for (const auto& p : peaks) aMax = std::max<double>(aMax, p.a);
     v_.assign(P, 0.0);
@@ -204,7 +209,85 @@ public:
     if (o_.joint && notes.size() >= 1) jointRevise(peaks, notes);
     if (o_.octaves) addOctaveDoubles(peaks, notes);
     std::sort(notes.begin(), notes.end(), [](const NoteDet& a, const NoteDet& b) { return a.midi < b.midi; });
+    computeFeatures(peaks, notes);
+    if (model_) applyModel(peaks, notes);
   }
+
+  // ---------------------------------------------------------------- cechy kandydatów dla modelu
+  // Dla każdej wysokości z co najmniej 2 z 6 pierwszych alikwotów: profil alikwotów, ich wyjaśnienie przez inne nuty, decyzja
+  // detektora zachłannego i jej sąsiedztwo (oktawy, kwinty), poprzednia klatka i informacja o uderzeniu. Wejście sieci w gt_model.hpp.
+  static constexpr int NF = 32;
+  struct FrameInfo { float onset = 0, sinceOnset = 1, level = 0; };
+  FrameInfo fi_;
+  void setFrameInfo(const FrameInfo& f) { fi_ = f; }
+  const std::vector<float>& features() const { return feat_; }
+  const std::vector<uint8_t>& featureOk() const { return featOk_; }
+  const std::vector<float>& probs() const { return prob_; }
+  int candMidi(size_t ci) const { return cands_[ci].m; }
+  size_t numCands() const { return cands_.size(); }
+  void setModel(bool on, double thr) { model_ = on; modelThr_ = thr; }
+
+  void computeFeatures(const std::vector<Peak>& peaks, const std::vector<NoteDet>& notes) {
+    const size_t C = cands_.size();
+    const int P = (int)peaks.size();
+    feat_.assign(C * NF, 0.f); featOk_.assign(C, 0);
+    if ((int)prevSal_.size() != (int)C) { prevSal_.assign(C, 0.f); prevChosen_.assign(C, 0); }
+    std::vector<uint8_t> chosen(C, 0), oct(C, 0);
+    for (const auto& n : notes) if (n.midi >= o_.lo && n.midi <= o_.hi) { chosen[n.midi - o_.lo] = 1; if (n.octave) oct[n.midi - o_.lo] = 1; }
+    // ile wybranych nut wyjaśnia każdy pik
+    std::vector<uint8_t> cov(P, 0);
+    std::vector<std::vector<int>> matched(C);
+    for (size_t ci = 0; ci < C; ++ci) {
+      const Cand& c = cands_[ci];
+      matched[ci].assign(10, -1);
+      for (size_t h = 0; h < c.hf.size() && h < 10; ++h) matched[ci][h] = find(peaks, c.hf[h], c.tol0 + c.tol1 * h);
+      if (chosen[ci]) for (size_t h = 0; h < c.hf.size(); ++h) { const int pi = find(peaks, c.hf[h], c.tol0 + c.tol1 * h); if (pi >= 0 && cov[pi] < 255) ++cov[pi]; }
+    }
+    std::vector<float> sal(C, 0.f);
+    float smax = 1e-9f;
+    for (size_t ci = 0; ci < C; ++ci) {
+      const Cand& c = cands_[ci];
+      double s = 0; int m6 = 0;
+      for (size_t h = 0; h < c.hf.size() && h < 10; ++h) { const int pi = matched[ci][h]; if (pi < 0) continue; s += c.w[h] * v_[pi]; if (h < 6) ++m6; }
+      sal[ci] = (float)s; smax = std::max(smax, (float)s);
+      if (m6 >= 2) featOk_[ci] = 1;
+    }
+    std::vector<float> order(sal);
+    std::sort(order.begin(), order.end(), std::greater<float>());
+    int nCh = 0; for (size_t ci = 0; ci < C; ++ci) nCh += chosen[ci];
+    auto ch = [&](int ci) { return ci >= 0 && ci < (int)C ? (float)chosen[ci] : 0.f; };
+    for (size_t ci = 0; ci < C; ++ci) {
+      if (!featOk_[ci]) continue;
+      const Cand& c = cands_[ci];
+      float* f = &feat_[ci * NF];
+      int m6 = 0;
+      for (int h = 0; h < 10; ++h) {
+        const int pi = h < (int)c.hf.size() ? matched[ci][h] : -1;
+        f[h] = pi >= 0 ? (float)v_[pi] : 0.f;
+        if (h < 6) {
+          if (pi >= 0) ++m6;
+          f[10 + h] = pi >= 0 ? (float)std::min<int>(2, cov[pi] - (chosen[ci] ? 1 : 0)) * 0.5f : 0.f;
+        }
+      }
+      f[16] = sal[ci] / smax;
+      f[17] = m6 / 6.f;
+      f[18] = (float)chosen[ci];
+      f[19] = (float)oct[ci];
+      f[20] = (float)std::log2(c.f0 / 220.0);
+      const int i = (int)ci;
+      f[21] = ch(i - 12); f[22] = ch(i + 12); f[23] = ch(i - 19); f[24] = ch(i - 7);
+      f[25] = (float)prevChosen_[ci];
+      f[26] = prevSal_[ci];
+      f[27] = nCh / 6.f;
+      f[28] = fi_.onset; f[29] = fi_.sinceOnset; f[30] = fi_.level;
+      int rank = 0; while (rank < (int)order.size() && order[rank] > sal[ci]) ++rank;
+      f[31] = std::min(10, rank) / 10.f;
+    }
+    for (size_t ci = 0; ci < C; ++ci) { prevSal_[ci] = sal[ci] / smax; prevChosen_[ci] = chosen[ci]; }
+  }
+
+  void applyModel(const std::vector<Peak>& peaks, std::vector<NoteDet>& notes);
+
 
   // Oktawowe podwojenie (np. E2 + E3): jego alikwoty pokrywają się z parzystymi alikwotami niższej nuty,
   // więc zwykłe kasowanie je ukrywa. Zdradza je nadmiar energii w parzystych alikwotach względem
@@ -463,6 +546,50 @@ inline YinResult yin(const float* x, int n, double fs, double fmin = 70, double 
   res.f = fs / bt;
   res.prob = std::max(0.0, 1.0 - cm[tau]);
   return res;
+}
+
+// Wytrenowany model (tools/train_model.py, wagi w gt_model.hpp) ocenia każdą kandydującą wysokość; zostają te z p >= progu
+// (najwyżej maxNotes + 1). Nuty wybrane też przez detektor zachłanny zachowują jego dopasowanie (f, odchyłka), pozostałe
+// dostają częstotliwość ważoną z pików alikwotów.
+inline void MultiPitch::applyModel(const std::vector<Peak>& peaks, std::vector<NoteDet>& notes) {
+  const size_t C = cands_.size();
+  prob_.assign(C, 0.f);
+  if (!kModelReady) return;
+  struct Pick { size_t ci; float p; };
+  std::vector<Pick> picks;
+  for (size_t ci = 0; ci < C; ++ci) {
+    if (!featOk_[ci]) continue;
+    const float p = modelPredict(&feat_[ci * NF]);
+    prob_[ci] = p;
+    if (p >= modelThr_) picks.push_back({ci, p});
+  }
+  std::sort(picks.begin(), picks.end(), [](const Pick& a, const Pick& b) { return a.p > b.p; });
+  if ((int)picks.size() > o_.maxNotes + 1) picks.resize(o_.maxNotes + 1);
+  std::vector<NoteDet> out;
+  for (const auto& pk : picks) {
+    const Cand& c = cands_[pk.ci];
+    const NoteDet* old = nullptr;
+    for (const auto& n : notes) if (n.midi == c.m) old = &n;
+    if (old) { NoteDet n = *old; n.score = std::max(n.score, pk.p); out.push_back(n); continue; }
+    double num = 0, den = 0, a2 = 0;
+    int m6 = 0;
+    for (size_t h = 0; h < c.hf.size() && h < 8; ++h) {
+      const int pi = find(peaks, c.hf[h], c.tol0 + c.tol1 * h);
+      if (pi < 0) continue;
+      const double a = peaks[pi].a, hh = (double)(h + 1);
+      num += a * peaks[pi].f / (hh * std::sqrt(1 + o_.B * hh * hh)); den += a;
+      if (h < 4) a2 += a * a;
+      if (h < 6) ++m6;
+    }
+    NoteDet n;
+    n.midi = c.m; n.f = (float)(den > 0 ? num / den : c.f0); n.cents = (float)(1200 * std::log2(n.f / c.f0));
+    n.amp = (float)std::sqrt(a2); n.score = pk.p; n.nh = m6;
+    // oktawa innej wybranej nuty: oznaczona jak podwojenie oktawowe (stroik i wybór basu ją pomijają)
+    for (const auto& q : picks) if (cands_[q.ci].m == c.m - 12 || cands_[q.ci].m == c.m - 24) n.octave = true;
+    out.push_back(n);
+  }
+  std::sort(out.begin(), out.end(), [](const NoteDet& a, const NoteDet& b) { return a.midi < b.midi; });
+  notes.swap(out);
 }
 
 } // namespace gt

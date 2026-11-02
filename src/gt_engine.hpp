@@ -37,6 +37,14 @@ struct EngineConfig {
   double susEvidence = 2.5; // ile punktów dowodu potrzeba (alikwot niezależny = 1, wspólny z niższą nutą = 0,5)
   bool refine = true;
   // docinanie granic nut krótkim oknem po analizie pliku (refine)
+  // odszumianie z wielu klatek (analiza pliku): widmo szumu tła = kwantyl amplitudy w każdym binie przez wszystkie klatki nagrania.
+  // Na żywo wyłączone: statystyka minimów (Martin 2001) i szum z klatek ciszy wycinały brzmiące struny (README).
+  bool model = true;        // wytrenowany model wybiera nuty spośród kandydatów (gt_model.hpp), przy analizie pliku
+  bool modelLive = false;   // ... także na żywo (w pomiarze akordy na żywo gorsze: 95,4 -> 88,9 %)
+  double modelThr = -1;    // próg prawdopodobieństwa (-1 = dobrany przy uczeniu, kModelThr)
+  bool denoise = true;
+  double noiseQ = 0.15;     // kwantyl amplitudy w binie przez wszystkie klatki nagrania = szum tła
+  double noiseTK = 3.0;     // pik musi być tyle razy (~9,5 dB) ponad szumem tła
   double prior = 1.0;       // premia w detektorze dla wysokości słyszanych niedawno (1 = wyłączona)
   double priorSec = 3.0;    // jak daleko wstecz [s]
   // kontekst czasowy (analiza pliku): poprzednie i następne chwile pomagają poprawić bieżącą
@@ -121,6 +129,7 @@ public:
     if (rebuild) setupWindow();
     mp_.setJoint(cfg_.joint, cfg_.jointSwap, cfg_.jointDrop);
     mp_.setOctModel(cfg_.octModel, cfg_.octModelThr, cfg_.octModelThrMono);
+    applyModelCfg();
     mp_.setLearnB(cfg_.learnB, cfg_.learnTol0, cfg_.learnTol1);
     mp_.setRange(kTunings[cfg_.tuning].open[0], kTunings[cfg_.tuning].open[5] + 24);
     hand_.configure(kTunings[cfg_.tuning].open, cfg_.hand, cfg_.handMotion);
@@ -161,6 +170,8 @@ public:
     keepDecimated_ = false;
     std::vector<float>().swap(dfull_);
     prevSilent_ = true;
+    noiseAmp_.clear(); noiseFixed_ = false;
+    applyModelCfg();
     if (ready_) { mp_.resetLearned(); setReference(cfg_.a4); }
   }
 
@@ -205,16 +216,45 @@ public:
     PeakOptions po;
     po.mains = cfg_.mains;
     const int step = kHop * 3;
+    const int K = spec_.bins(), NB = 180;
+    std::vector<uint16_t> nh;
+    int nFr = 0;
+    if (cfg_.denoise) nh.assign((size_t)K * NB, 0);
     for (size_t p = (size_t)win_; p + 1 <= d.size(); p += step) {
       double e = 0;
       for (size_t i = p - kHop; i < p; ++i) e += (double)d[i] * d[i];
       const double lv = 10 * std::log10(e / kHop + 1e-12);
       levels.push_back(lv);
-      if (lv < cfg_.gateDb) continue;
+      if (lv < cfg_.gateDb && !cfg_.denoise) continue;
       spec_.compute(d.data() + p - win_);
+      if (cfg_.denoise && nFr < 65000) {
+        // histogram log10(amplitudy) w każdym binie, od 1e-9 do 1 co 0,05
+        const auto& mg = spec_.mag();
+        for (int k = 0; k < K; ++k) {
+          const int b = std::max(0, std::min(NB - 1, (int)((std::log10(mg[k] + 1e-12) + 9.0) * 20.0)));
+          ++nh[(size_t)k * NB + b];
+        }
+        ++nFr;
+      }
+      if (lv < cfg_.gateDb) continue;
       po.minAmp = std::pow(10.0, cfg_.gateDb / 20) * 0.35;
       spec_.pickPeaks(po, pk);
       addTuningVotes(pk, hist, weight, 1.0);
+    }
+    noiseAmp_.clear();
+    if (cfg_.denoise && nFr >= 20) {
+      noiseAmp_.assign(K, 0.0);
+      const int target = std::max(1, (int)(cfg_.noiseQ * nFr));
+      for (int k = 0; k < K; ++k) {
+        int acc = 0, b = 0;
+        for (; b < NB; ++b) { acc += nh[(size_t)k * NB + b]; if (acc >= target) break; }
+        noiseAmp_[k] = std::pow(10.0, (b + 0.5) / 20.0 - 9.0);
+      }
+      // wygładzenie w częstotliwości (sąsiednie biny), żeby nie wycinać pojedynczych pików
+      std::vector<double> sm(K);
+      for (int k = 0; k < K; ++k) { double s2 = 0; int n2 = 0; for (int j = std::max(0, k - 3); j <= std::min(K - 1, k + 3); ++j) { s2 += noiseAmp_[j]; ++n2; } sm[k] = s2 / n2; }
+      noiseAmp_.swap(sm);
+      noiseFixed_ = true;
     }
     if (cfg_.autoGate && levels.size() > 8) {
       std::sort(levels.begin(), levels.end());
@@ -228,6 +268,7 @@ public:
     prepassed_ = true;
     resetStreamKeepTuning();
     keepDecimated_ = true;
+    applyModelCfg();
     dfull_.clear();
     dfull_.reserve(n / D_ + 1024);
   }
@@ -253,6 +294,7 @@ public:
   }
   bool finished() const { return finished_; }
   MultiPitch& dbgPitch() { return mp_; }
+  FILE* dumpFile_ = nullptr; // zrzut cech kandydatów do uczenia modelu (tools/train_model.py)
 
   const std::vector<NoteEvent2>& events() const { return tracker_.events; }
   std::vector<NoteEvent2> allEvents() const {
@@ -276,6 +318,9 @@ private:
   Ring ring_;
   OnsetDetector onset_;
   Spectrum spec_;
+  // szum tła z wielu klatek
+  std::vector<double> noiseAmp_;            // amplituda szumu na bin (gotowa)
+  bool noiseFixed_ = false;                 // z całego nagrania (plik) zamiast statystyki minimów
   mutable Spectrum spx_;   // widmo pomocnicze dla poprawek z kontekstu
   MultiPitch mp_;
   NoteTracker tracker_;
@@ -323,8 +368,11 @@ private:
     const double tc = tuneCents_;
     const bool lock = prepassed_;
     const double g = gateEff_;
+    std::vector<double> na; na.swap(noiseAmp_);
+    const bool nfx = noiseFixed_;
     resetState();
     tuneCents_ = tc; prepassed_ = lock; gateEff_ = g;
+    noiseAmp_.swap(na); noiseFixed_ = nfx;
     setReference(cfg_.a4 * std::pow(2.0, tuneCents_ / 1200.0));
   }
 
@@ -340,6 +388,10 @@ private:
     o.octRatioMono = cfg_.octRatioMono;
     o.joint = cfg_.joint; o.jointSwap = cfg_.jointSwap; o.jointDrop = cfg_.jointDrop;
     mp_.init(o, cfg_.a4);
+  }
+
+  void applyModelCfg() {
+    mp_.setModel(cfg_.model && kModelReady && (keepDecimated_ || cfg_.modelLive), cfg_.modelThr >= 0 ? cfg_.modelThr : kModelThr);
   }
 
   void setReference(double a4) {
@@ -452,6 +504,7 @@ private:
       PeakOptions po;
       po.mains = cfg_.mains;
       po.minAmp = std::pow(10.0, gateEff_ / 20) * 0.35;
+      if (cfg_.denoise && noiseFixed_ && (int)noiseAmp_.size() == spec_.bins()) { po.tnoise = &noiseAmp_; po.tK = cfg_.noiseTK; }
       spec_.pickPeaks(po, peaks_);
       if (cfg_.autoTune && !prepassed_) liveTuning();
       if (cfg_.prior > 1.0) {
@@ -461,7 +514,24 @@ private:
         for (auto it = tracker_.events.rbegin(); it != tracker_.events.rend() && it->t1 > t - cfg_.priorSec; ++it) pm.push_back(it->midi);
         mp_.setPrior(pm, cfg_.prior);
       }
+      {
+        MultiPitch::FrameInfo fi;
+        fi.onset = onsetT >= 0 ? 1.f : 0.f;
+        fi.sinceOnset = lastOnset_ < 0 ? 1.f : (float)clampd(t - lastOnset_, 0, 1);
+        fi.level = (float)clampd((levelDb - gateEff_) / 40.0, 0, 1.5);
+        mp_.setFrameInfo(fi);
+      }
       mp_.detect(peaks_, dets_);
+      if (dumpFile_) {
+        const auto& F = mp_.features(); const auto& ok = mp_.featureOk();
+        for (size_t ci = 0; ci < mp_.numCands(); ++ci) {
+          if (!ok[ci]) continue;
+          float row[2 + MultiPitch::NF];
+          row[0] = (float)(t - 0.5 * wSec); row[1] = (float)mp_.candMidi(ci);
+          for (int k = 0; k < MultiPitch::NF; ++k) row[2 + k] = F[ci * MultiPitch::NF + k];
+          fwrite(row, sizeof(float), 2 + MultiPitch::NF, dumpFile_);
+        }
+      }
       if (cfg_.sustain) addSustained(t);
       fr.handRejected = (uint8_t)std::min(255, hand_.filter(dets_, t, lastOnset_ < 0 ? 1e9 : t - lastOnset_, wSec));
 #ifdef GT_DEBUG
