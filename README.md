@@ -131,3 +131,7 @@ node tools/ui_test.js katalog nagranie.wav         # Chromium (Playwright): demo
 | `src/gt_synth.hpp` | syntezator szarpanej struny (odsłuch i korpus testowy) |
 | `src/wasm_api.cpp` | interfejs C dla przeglądarki |
 | `web/` | interfejs (HTML, CSS, JS) i skrypt składający plik |
+
+## Dalsze kierunki
+
+Przegląd metod i prac naukowych, które mogą poprawić wykrywanie dźwięków (z odniesieniami do kodu): [`docs/BADANIA.md`](docs/BADANIA.md).
