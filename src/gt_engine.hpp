@@ -26,7 +26,7 @@ static const int kNumTunings = sizeof(kTunings) / sizeof(kTunings[0]);
 
 struct EngineConfig {
   double a4 = 440;
-  int win = 4096;          // okno analizy w próbkach po decymacji (2048/4096/8192)
+  int win = 4096;          // okno analizy w próbkach po decymacji (2048/4096/8192); 2048: lepsze nuty w szybkiej grze, gorsze akordy
   double gateDb = -62;     // próg ciszy [dB, moc względem pełnej skali]
   int mains = 50;          // brum sieci: 50 / 60 / 0
   bool autoTune = true;    // automatyczna korekta stroju odniesienia
@@ -48,10 +48,22 @@ struct EngineConfig {
   double release = 0.13;   // tolerancja na chwilowy zanik nuty [s]
   double susHold = 4.0;    // jak długo [s] próg pozostaje niski; potem rośnie do zwykłego w ciągu kolejnych 10 s
   bool freshFull = true;   // nowe nuty liczą się do akordu od pierwszej ramki po uderzeniu
+  bool chordsFromNotes = true; // analiza pliku: akordy składane z gotowej listy nut (nuty są podstawą, akord to ich nazwa)
+  bool liveNotes = false;  // na żywo: akord tylko z nut potwierdzonych przez tracker
+  double chGroup = 0.08;   // początki nut bliżej niż tyle [s] od poprzedniego to jedno uderzenie
+  double chCarryTau = 1.2; // waga nut brzmiących z wcześniejszych uderzeń maleje z tą stałą czasu [s]
+  double chLate = 0.6;     // spóźnione nuty do tylu [s] po pełnym uderzeniu dopełniają jego akord (0 = wyłączone)
+  int chKeepMax = 3;       // uderzenie z mniej niż tyloma nowymi klasami dźwięków, wszystkimi w bieżącym akordzie, nie zmienia akordu
+  double chFrameW = 0.6;   // waga dowodu z pojedynczych ramek (wysokości niepotwierdzone jako nuty), względem najsilniejszej nuty
+  double chShort = 0.8;    // nuty krótsze niż tyle [s] ważą proporcjonalnie mniej
+  double chBassRel = 0.3;  // bas = najniższa nuta o wadze >= tej części najsilniejszej
+  int chFreshMin = 2;      // od tylu różnych klas dźwięków w samym uderzeniu akord bierze tylko nowe nuty
   bool hand = true;        // śledzenie ręki: odrzucaj nuty niemożliwe do zagrania razem
   bool handMotion = true;  // ... także skoki ręki szybsze, niż ręka zdąży
   double octRatio = 1.4;     // próg nadwyżki parzystych alikwotów dla podwojenia oktawowego w akordzie
   double octRatioMono = 2.2; // ... przy pojedynczej nucie
+  bool learnB = true;        // nieharmoniczność mierzona dla każdej wysokości (węższe dopasowanie alikwotów)
+  double learnTol0 = 25, learnTol1 = 1.2;
   bool octModel = true;      // test podwojeń oktawowych z modelem miejsca szarpnięcia (Traube i Smith)
   double octModelThr = 1.4, octModelThrMono = 2.5;
   bool joint = true;         // ocena łączna zbioru nut (poduktawy, nuty wyjaśnione przez inne)
@@ -94,6 +106,7 @@ public:
     if (rebuild) setupWindow();
     mp_.setJoint(cfg_.joint, cfg_.jointSwap, cfg_.jointDrop);
     mp_.setOctModel(cfg_.octModel, cfg_.octModelThr, cfg_.octModelThrMono);
+    mp_.setLearnB(cfg_.learnB, cfg_.learnTol0, cfg_.learnTol1);
     mp_.setRange(kTunings[cfg_.tuning].open[0], kTunings[cfg_.tuning].open[5] + 24);
     hand_.configure(kTunings[cfg_.tuning].open, cfg_.hand, cfg_.handMotion);
     setReference(cfg_.a4 * std::pow(2.0, tuneCents_ / 1200.0));
@@ -133,7 +146,7 @@ public:
     keepDecimated_ = false;
     std::vector<float>().swap(dfull_);
     prevSilent_ = true;
-    if (ready_) setReference(cfg_.a4);
+    if (ready_) { mp_.resetLearned(); setReference(cfg_.a4); }
   }
 
   // ---------------------------------------------------------------- strumień audio
@@ -157,6 +170,7 @@ public:
     tracker_.endAll(nd_ / fsd_);
     finished_ = true;
     if (keepDecimated_ && cfg_.refine && !dfull_.empty()) refineEvents();
+    if (keepDecimated_ && cfg_.chordsFromNotes) chordsFromNotes();
     std::vector<float>().swap(dfull_);
   }
 
@@ -233,7 +247,7 @@ public:
       e.midi = kv.first; e.t0 = kv.second.t0; e.t1 = std::max(t, kv.second.t0 + 0.05); e.vel = kv.second.vel;
       ev.push_back(e);
     }
-    std::sort(ev.begin(), ev.end(), [](const NoteEvent2& a, const NoteEvent2& b) { return a.t0 < b.t0; });
+    std::sort(ev.begin(), ev.end(), [](const NoteEvent2& a, const NoteEvent2& b) { return a.t0 < b.t0 || (a.t0 == b.t0 && a.midi < b.midi); });
     return ev;
   }
 
@@ -437,7 +451,11 @@ private:
     std::vector<const NoteDet*> stable;
     for (const auto& n : dets_) {
       const bool prev = std::find(prevStable_.begin(), prevStable_.end(), n.midi) != prevStable_.end();
-      if (prev || tracker_.active.count(n.midi)) stable.push_back(&n);
+      // liveNotes: dowodem dla akordu są tylko nuty potwierdzone przez tracker (akord z nut, nie z pojedynczych ramek)
+      // przy analizie pliku zawsze (akordy i tak powstają tam z listy nut); na żywo tylko z liveNotes, bo w pomiarze
+      // dawało to większe opóźnienie i migotanie akordu
+      const bool notesOnly = cfg_.liveNotes || (keepDecimated_ && cfg_.chordsFromNotes);
+      if (notesOnly ? tracker_.active.count(n.midi) > 0 : (prev || tracker_.active.count(n.midi))) stable.push_back(&n);
     }
     if (stable.empty() && prevSilent_) for (const auto& n : dets_) stable.push_back(&n);
     prevStable_ = cur;
@@ -510,7 +528,7 @@ private:
   void refineEvents() {
     const double fsd = fsd_, B = 2.5e-4, minF = 35.0 * fsd / 1024, hopT = 128 / fsd;
     auto& evs = tracker_.events;
-    std::sort(evs.begin(), evs.end(), [](const NoteEvent2& a, const NoteEvent2& b) { return a.t0 < b.t0; });
+    std::sort(evs.begin(), evs.end(), [](const NoteEvent2& a, const NoteEvent2& b) { return a.t0 < b.t0 || (a.t0 == b.t0 && a.midi < b.midi); });
     std::vector<NoteEvent2> out;
     std::vector<double> tt;
     std::vector<std::vector<double>> en;
@@ -601,8 +619,141 @@ private:
       if (e.t1 < e.t0 + 0.08) e.t1 = e.t0 + 0.08;
       out.push_back(e);
     }
-    std::sort(out.begin(), out.end(), [](const NoteEvent2& a, const NoteEvent2& b) { return a.t0 < b.t0; });
+    std::sort(out.begin(), out.end(), [](const NoteEvent2& a, const NoteEvent2& b) { return a.t0 < b.t0 || (a.t0 == b.t0 && a.midi < b.midi); });
     evs.swap(out);
+  }
+
+  // ---------------------------------------------------------------- akordy z nut
+  // Nuty są wynikiem podstawowym, akord jest ich nazwą. Po analizie pliku (i po dopracowaniu granic nut) grupujemy początki nut
+  // w uderzenia, a dla każdego odcinka między uderzeniami bierzemy nuty, które wtedy brzmią:
+  //  * jeśli samo uderzenie ma >= chFreshMin klas dźwięków (uderzenie w akord), liczą się tylko nowe nuty,
+  //  * inaczej (arpeggio, pojedyncze struny) także nuty brzmiące z wcześniejszych uderzeń, z wagą malejącą z czasem.
+  // Nazwę daje ten sam dobór szablonu co dotąd (recognizeChord), bas = najniższa nowa nuta. Wynik zastępuje etykiety
+  // akordów w ramkach i historię akordów.
+  void chordsFromNotes() {
+    std::vector<NoteEvent2> ev = tracker_.events;
+    std::sort(ev.begin(), ev.end(), [](const NoteEvent2& a, const NoteEvent2& b) { return a.t0 < b.t0 || (a.t0 == b.t0 && a.midi < b.midi); });
+    struct Seg { double a, b; std::string name; float score; std::string alt[2]; int nAlt; int pcs; int freshPcs; int nFresh; };
+    std::vector<Seg> segs;
+    // uderzenia: kolejne początki bliżej niż chGroup od poprzedniego (łańcuch), całość najwyżej 0,25 s
+    std::vector<double> starts, ends;
+    std::vector<int> pcsOf;
+    for (size_t i = 0; i < ev.size(); ++i) {
+      if (starts.empty() || ev[i].t0 - ends.back() > cfg_.chGroup || ev[i].t0 - starts.back() > 0.25) { starts.push_back(ev[i].t0); ends.push_back(ev[i].t0); pcsOf.push_back(0); }
+      else ends.back() = ev[i].t0;
+      pcsOf.back() |= 1 << (ev[i].midi % 12);
+    }
+    // dopełnianie akordu: uderzenie z niewielu nowych dźwięków krótko po pełnym uderzeniu (spóźniona struna, nuta wykryta
+    // z opóźnieniem) dołącza do niego, a akord jest liczony ze wszystkich jego nut
+    if (cfg_.chLate > 0) {
+      std::vector<double> s2, e2;
+      std::vector<int> p2;
+      for (size_t g = 0; g < starts.size(); ++g) {
+        const int n = __builtin_popcount(pcsOf[g]);
+        if (!s2.empty() && n < cfg_.chKeepMax && __builtin_popcount(p2.back()) >= cfg_.chKeepMax && starts[g] - s2.back() < cfg_.chLate) {
+          e2.back() = ends[g]; p2.back() |= pcsOf[g];
+        } else { s2.push_back(starts[g]); e2.push_back(ends[g]); p2.push_back(pcsOf[g]); }
+      }
+      starts.swap(s2); ends.swap(e2);
+    }
+    for (size_t g = 0; g < starts.size(); ++g) {
+      const double a = starts[g], b = g + 1 < starts.size() ? starts[g + 1] : 1e9, ga = ends[g];
+      double w[12] = {0}, wf[12] = {0};
+      struct Use { int midi; double wt; bool fresh; };
+      std::vector<Use> used;
+      double end = a;
+      for (const auto& e : ev) {
+        if (e.t0 > ga + 0.02) continue;
+        const bool fresh = e.t0 >= a - 0.02;
+        // ogon poprzedniego uderzenia, który kończy się zaraz po nim, nie należy do nowego akordu
+        if (!fresh && e.t1 <= ga + 0.12) continue;
+        const double amp = std::pow(10.0, (e.vel - 64) / 28.0); // odwrotność NoteTracker::velocity (amplituda względna)
+        // krótkie nuty (zwykle duchy albo urwane ogony) ważą mniej
+        const double dur = std::min(1.0, (e.t1 - e.t0) / cfg_.chShort);
+        const double x = std::sqrt(amp) * dur * (fresh ? 1.0 : std::exp(-(a - e.t0) / cfg_.chCarryTau));
+        const int pc = e.midi % 12;
+        if (fresh) wf[pc] += x;
+        w[pc] += x;
+        used.push_back({e.midi, x, fresh});
+        end = std::max(end, e.t1);
+      }
+      int nf = 0;
+      for (int p = 0; p < 12; ++p) if (wf[p] > 0) ++nf;
+      const bool freshOnly = nf >= cfg_.chFreshMin;
+      // uzupełnienie: wysokości widoczne w ramkach odcinka, ale niepotwierdzone jako nuty (słaby dowód, chFrameW)
+      if (cfg_.chFrameW > 0) {
+        const double half = 0.5 * win_ / fsd_, fb = std::min(b, a + 1.0);
+        double fw[12] = {0};
+        int nfr = 0;
+        for (const auto& fr : frames_) {
+          const double tc = fr.t - half;
+          if (tc < a + 0.05 || tc >= fb || fr.silent) continue;
+          ++nfr;
+          for (int k = 0; k < fr.nNotes; ++k) fw[fr.notes[k].midi % 12] += std::sqrt(std::max(1e-6f, fr.notes[k].amp));
+        }
+        if (nfr > 0) {
+          double ref = 0;
+          for (const auto& u : used) ref = std::max(ref, u.wt);
+          double fmax = 0;
+          for (int p = 0; p < 12; ++p) fmax = std::max(fmax, fw[p]);
+          if (fmax > 0 && ref > 0)
+            for (int p = 0; p < 12; ++p) {
+              const double x = cfg_.chFrameW * ref * fw[p] / fmax;
+              wf[p] += x; w[p] += x;
+            }
+        }
+      }
+      const double* src = freshOnly ? wf : w;
+      double tot = 0, wmax = 0;
+      for (int p = 0; p < 12; ++p) tot += src[p];
+      for (const auto& u : used) if (u.fresh || !freshOnly) wmax = std::max(wmax, u.wt);
+      // bas: najniższa wyraźna nuta spośród liczonych
+      int bass = 1000;
+      for (const auto& u : used) if ((u.fresh || !freshOnly) && u.wt >= cfg_.chBassRel * wmax) bass = std::min(bass, u.midi);
+      Seg sg{a, std::min(b, end), std::string(), 0.f, {}, 0, 0, 0, nf};
+      for (int p = 0; p < 12; ++p) if (wf[p] > 0) sg.freshPcs |= 1 << p;
+      if (tot > 0) {
+        double ww[12];
+        for (int p = 0; p < 12; ++p) ww[p] = src[p] / tot;
+        const ChordResult r = recognizeChord(ww, bass < 1000 ? bass % 12 : -1, cfg_.chord);
+        if (r.ok) {
+          sg.name = r.name; sg.score = r.score; sg.nAlt = r.nAlt; for (int k = 0; k < r.nAlt; ++k) sg.alt[k] = r.alt[k];
+          const ChordTemplate& T = kChordTemplates[r.tpl];
+          for (int q = 0; q < T.n; ++q) sg.pcs |= 1 << ((r.root + T.iv[q]) % 12);
+        }
+      }
+      segs.push_back(sg);
+    }
+    // nowe nuty, które należą do bieżącego akordu (pojedyncza struna w arpeggio, spóźniona struna uderzenia), nie zmieniają
+    // jego nazwy; odcinek bez nazwy przejmuje poprzednią
+    for (size_t i = 1; i < segs.size(); ++i) {
+      Seg& p = segs[i - 1];
+      Seg& c = segs[i];
+      if (p.name.empty() || c.a > p.b + 0.05) continue;
+      const bool fits = c.nFresh < cfg_.chKeepMax && (c.freshPcs & ~p.pcs) == 0;
+      if (c.name.empty() || (fits && c.name != p.name)) {
+        c.name = p.name; c.score = p.score; c.pcs = p.pcs; c.nAlt = p.nAlt; for (int k = 0; k < p.nAlt; ++k) c.alt[k] = p.alt[k];
+      }
+    }
+    // ramki: etykieta odcinka, w którym leży środek okna analizy
+    const double half = 0.5 * win_ / fsd_;
+    size_t si = 0;
+    for (auto& fr : frames_) {
+      const double tc = fr.t - half;
+      while (si + 1 < segs.size() && segs[si + 1].a <= tc) ++si;
+      fr.chord = -1; fr.chordScore = 0; fr.alt[0] = fr.alt[1] = -1;
+      if (segs.empty() || fr.silent || tc < segs[si].a || tc > segs[si].b || segs[si].name.empty()) continue;
+      fr.chord = (int16_t)chordId(segs[si].name);
+      fr.chordScore = segs[si].score;
+      for (int k = 0; k < segs[si].nAlt; ++k) fr.alt[k] = (int16_t)chordId(segs[si].alt[k]);
+    }
+    chordLog_.clear();
+    double prevEnd = -1;
+    for (const auto& sg : segs) {
+      if (sg.name.empty()) continue;
+      if (chordLog_.empty() || chordLog_.back().name != sg.name || sg.a > prevEnd + 0.3) chordLog_.push_back({sg.a, sg.name});
+      prevEnd = std::max(prevEnd, sg.b);
+    }
   }
 
   // Czułość podtrzymania. Nuta, która już brzmi, ale w tej ramce nie przeszła zwykłych progów (zanikła pod nowszymi dźwiękami,

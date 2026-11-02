@@ -2,6 +2,7 @@
 // widma + iteracyjne kasowanie) oraz YIN do stroika.
 #pragma once
 #include <cstdio>
+#include <map>
 #include "gt_spectrum.hpp"
 
 namespace gt {
@@ -28,6 +29,9 @@ public:
     double relThr = 0.2;
     int maxNotes = 6;
     bool octaves = true;     // wykrywaj oktawowe podwojenia
+    bool learnB = true;      // ucz nieharmoniczność dla każdej wysokości
+    int learnMin = 12;       // od tylu pomiarów
+    double learnTol0 = 25, learnTol1 = 1.2;
     bool joint = true;       // ocena łączna po wyborze zachłannym (poduktawy, nuty w całości wyjaśnione przez inne)
     double jointSwap = 0.0;  // poduktawa -> oktawa wyżej, gdy jej własny wkład < tej części całości
     double jointDrop = 0.12; // usuń nutę, gdy jej własny wkład < tej części całości
@@ -55,14 +59,17 @@ public:
       Cand c;
       c.m = m;
       c.f0 = midiFreq(m, a4);
+      const auto lb = learnedB_.find(m);
+      const double B = lb != learnedB_.end() ? lb->second : o_.B;
+      if (lb != learnedB_.end()) { c.tol0 = o_.learnTol0; c.tol1 = o_.learnTol1; }
       for (int h = 1; h <= o_.maxH; ++h) {
-        const double f = h * c.f0 * std::sqrt(1 + o_.B * h * h);
+        const double f = h * c.f0 * std::sqrt(1 + B * h * h);
         if (f > o_.fs * 0.5 * 0.92) break;
         c.hf.push_back((float)f);
         c.w.push_back((float)((c.f0 + 52) / (h * c.f0 + 320)));
       }
       for (int h = 1; h <= 40; ++h) {
-        const double f = h * c.f0 * std::sqrt(1 + o_.B * h * h);
+        const double f = h * c.f0 * std::sqrt(1 + B * h * h);
         if (f > 4800) break;
         c.all.push_back((float)f);
       }
@@ -73,6 +80,13 @@ public:
   double a4() const { return a4_; }
   double jointTol0_ = 18, jointTol1_ = 1.0, jointH1_ = 0.35;
   void setOctModel(bool on, double thr, double mono) { o_.octModel = on; o_.octModelThr = thr; o_.octModelThrMono = mono; }
+  void setLearnB(bool on, double t0, double t1) {
+    if (on == o_.learnB && t0 == o_.learnTol0 && t1 == o_.learnTol1) return;
+    o_.learnB = on; o_.learnTol0 = t0; o_.learnTol1 = t1;
+    if (!on) { learnedB_.clear(); bSamples_.clear(); }
+    setA4(a4_);
+  }
+  void resetLearned() { learnedB_.clear(); bSamples_.clear(); setA4(a4_); }
   void setJoint(bool j, double swap, double drop) { o_.joint = j; o_.jointSwap = swap; o_.jointDrop = drop; }
 #ifdef GT_DEBUG
   int dbgMidi_ = -1;
@@ -95,6 +109,7 @@ public:
 
   void detect(const std::vector<Peak>& peaks, std::vector<NoteDet>& notes) {
     notes.clear();
+    if (pendingRebuild_) { pendingRebuild_ = false; setA4(a4_); }
     const int P = (int)peaks.size();
     if (!P) return;
     double aMax = 0;
@@ -115,7 +130,7 @@ public:
         int m6 = 0, un = 0;
         bool h1un = false;
         for (size_t h = 0; h < c.hf.size(); ++h) {
-          const int pi = find(peaks, c.hf[h], 28 + 1.5 * h);
+          const int pi = find(peaks, c.hf[h], c.tol0 + c.tol1 * h);
           idx_[h] = pi;
           if (pi < 0) continue;
           const uint8_t e = expl_[pi];
@@ -158,7 +173,7 @@ public:
         expl_[pi] = 1;
       }
       for (size_t h = 0; h < c.all.size(); ++h) {
-        const int pi = find(peaks, c.all[h], 28 + 1.5 * h);
+        const int pi = find(peaks, c.all[h], c.tol0 + c.tol1 * h);
         if (pi >= 0) expl_[pi] = 1;
       }
       double fe = den > 0 ? num / den : c.f0;
@@ -167,7 +182,10 @@ public:
         if (std::fabs(dd) > 1e-9 * sw * sxx) {
           const double c1 = (sw * sxy - sx * sy) / dd, c0 = (sy - c1 * sx) / sw;
           const double B = c0 > 0 ? c1 / c0 : -1;
-          if (c0 > 0 && B > -2e-4 && B < 1.5e-3) fe = std::sqrt(c0);
+          if (c0 > 0 && B > -2e-4 && B < 1.5e-3) {
+            fe = std::sqrt(c0);
+            if (o_.learnB && np >= 5) learnB(c.m, B);
+          }
         }
       }
       NoteDet n;
@@ -312,7 +330,7 @@ public:
       const double k = std::pow(2.0, n.cents / 1200.0);
       double u = 0; tot = 0;
       for (size_t h = 0; h < c.hf.size(); ++h) {
-        const int pi = find(peaks, c.hf[h] * k, 28 + 1.5 * h);
+        const int pi = find(peaks, c.hf[h] * k, c.tol0 + c.tol1 * h);
         if (pi < 0) continue;
         const double s = c.w[h] * v_[pi];
         tot += s;
@@ -371,10 +389,28 @@ private:
   struct Cand {
     int m = 0;
     double f0 = 0;
+    float tol0 = 28, tol1 = 1.5; // tolerancja dopasowania alikwotu [centy] = tol0 + tol1 * h
     std::vector<float> hf, w, all;
   };
   Options o_;
   double a4_ = 440;
+  std::map<int, double> learnedB_;            // zmierzona nieharmoniczność na wysokość
+  std::map<int, std::vector<float>> bSamples_;
+  bool pendingRebuild_ = false;
+
+  // Nieharmoniczność zależy od struny (Barbancho i in. 2012; Rigaud i in. 2013). Po zebraniu pomiarów dla danej wysokości
+  // grzebień tej wysokości dostaje własne B i węższą tolerancję, więc obce piki rzadziej się do niego "przyklejają".
+  void learnB(int m, double B) {
+    auto& v = bSamples_[m];
+    v.push_back((float)B);
+    if (v.size() > 41) v.erase(v.begin());
+    if (v.size() < (size_t)o_.learnMin || v.size() % 4) return;
+    std::vector<float> t = v;
+    std::nth_element(t.begin(), t.begin() + t.size() / 2, t.end());
+    const double med = std::max(0.0, (double)t[t.size() / 2]);
+    const auto it = learnedB_.find(m);
+    if (it == learnedB_.end() || std::fabs(med - it->second) > 0.15 * std::max(med, 5e-5)) { learnedB_[m] = med; pendingRebuild_ = true; }
+  }
   std::vector<Cand> cands_;
   std::vector<double> v_;
   std::vector<uint8_t> expl_, chosen_;

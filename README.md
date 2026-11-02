@@ -4,13 +4,15 @@ Rozpoznawanie nut, akordów i stroju gitary na żywo z mikrofonu albo z pliku au
 Cała analiza dźwięku jest napisana w **C++17** (`src/`), kompilowana do **WebAssembly** i osadzona
 w jednym pliku HTML. Ten plik działa jako artefakt i jako samodzielna aplikacja offline.
 
-* `dist/gitara-sluchacz.html`: gotowa aplikacja (jeden plik, ok. 2 MB, mikrofon działa po otwarciu z dysku)
-* `dist/gt_engine.wasm`: sam silnik (ok. 280 KB)
+* `dist/gitara-sluchacz.html`: gotowa aplikacja (jeden plik, ok. 3 MB, mikrofon działa po otwarciu z dysku)
+* `dist/gt_engine.wasm`: sam silnik (ok. 400 KB)
 
 ## Co potrafi
 
 * wielogłosowe wykrywanie nut (grzebień alikwotów + kasowanie), z podwojeniami oktawowymi (E2+E3),
-* akordy (20 typów, chwyty z basem, np. `C/G`), stroik z wskaźnikiem w centach i wskazaniem struny,
+* **najpierw nuty, potem akordy**: po analizie nagrania akord jest składany z gotowej listy nut (uderzenia = grupy początków nut,
+  spóźnione struny dopełniają akord swojego uderzenia, nuty pasujące do bieżącego akordu nie zmieniają jego nazwy); 20 typów, chwyty z basem, np. `C/G`,
+* stroik z wskaźnikiem w centach i wskazaniem struny,
 * 8 strojów gitary (standard, drop D, DADGAD, open G, …), palcowanie z programowaniem dynamicznym po całym utworze,
 * **śledzenie lewej ręki** (`src/gt_hand.hpp`): zestaw nut brzmiących naraz musi dać się zagrać jednym ułożeniem palców
   (cztery palce, rozpiętość zależna od pozycji, barre bez strun na niższym progu, osobne palce gdy barre jest niemożliwe), a pozycja
@@ -52,24 +54,71 @@ dudnienie polaryzacji, ślizg wysokości przy ataku, rezonans pudła, pogłos, s
 `tools/run_bench.sh` uruchamia **oryginalny silnik JS** (`tools/baseline/`) i nowy silnik na tych samych plikach i liczy te same metryki
 (`tools/score.py`). Parametry były strojone na zbiorze `dev`; poniżej zbiór kontrolny `holdout` (64 nagrania, inne ziarna).
 
-| metryka (holdout) | oryginał JS | nowy C++ |
-|---|---:|---:|
-| akord rozpoznany poprawnie (uderzenia) | 90,2 % | **96,3 %** |
-| akord poprawny w ramkach okna oceny | 87,0 % | **95,5 %** |
-| migotanie etykiety akordu (zmian/akord) | 0,48 | **0,13** |
-| opóźnienie pierwszego poprawnego akordu | 0,54 s | **0,34 s** |
-| akord przy rozstrojonej gitarze (−35…+32¢) | 64,8 % | **100 %** |
-| nuty (F1 obecności dźwięku) | 74,2 % | **81,0 %** |
-| początki nut (F1, tol. 120 ms) | 70,0 % | **79,5 %** |
-| pokrycie słyszalnego czasu nuty | 64,8 % | **74,3 %** |
-| stroik: trafiony dźwięk (melodie) | 90,5 % | **97,6 %** |
-| stroik: mediana błędu częstotliwości | 0,72¢ | **0,30¢** |
-| czas analizy / czas nagrania (natywnie; WebAssembly ok. 0,03) | 0,033 | **0,021** |
+| metryka (holdout) | oryginał JS | poprzedni C++ | **obecny C++** |
+|---|---:|---:|---:|
+| akord rozpoznany poprawnie (uderzenia) | 90,2 % | 96,3 % | **98,5 %** |
+| akord poprawny w ramkach okna oceny | 87,0 % | 95,5 % | **97,5 %** |
+| migotanie etykiety akordu (zmian/akord) | 0,48 | 0,13 | **0,09** |
+| akord przy rozstrojonej gitarze (−35…+32¢) | 64,8 % | 100 % | **98,1 %** |
+| nuty (F1 obecności dźwięku w ramkach) | 74,2 % | 81,0 % | **81,6 %** |
+| nuty (F1 obecności z listy nut) | | 81,5 % | **82,4 %** |
+| początki nut (F1, tol. 120 ms) | 70,0 % | 79,5 % | **80,5 %** |
+| początki nut (F1, tol. 50 ms, jak w publikacjach) | | 54,0 % | **73,6 %** |
+| pokrycie słyszalnego czasu nuty | 64,8 % | 74,3 % | **75,7 %** |
+| stroik: trafiony dźwięk (melodie) | 90,5 % | **97,6 %** | 96,9 % |
+| stroik: mediana błędu częstotliwości | 0,72¢ | 0,30¢ | 0,30¢ |
+| czas analizy / czas nagrania (natywnie) | 0,033 | **0,021** | 0,06 |
 
 Nuta "brzmi" w miarach od 0,12 s po uderzeniu do końca słyszalności (spadek dominującego alikwotu o 40 dB) albo zwolnienia struny.
 Wcześniejsza wersja miary liczyła tylko pierwsze 1,2 s i karała poprawnie podtrzymane nuty; liczby w tabeli są z poprawionej miary dla obu silników.
 
-**Co poprawiło dokładność w ostatniej rundzie** (zbiór kontrolny, względem poprzedniej wersji):
+Opóźnienie pierwszego poprawnego akordu nie jest już w tabeli: w analizie pliku akordy powstają z gotowej listy nut i są
+wyrównane w czasie do uderzeń, więc ta liczba przestała mierzyć to samo co dawniej. Analiza jest ok. 3× wolniejsza niż w poprzedniej
+wersji (dokładne początki nut liczone osobno dla każdej nuty), nadal kilkanaście razy szybciej niż czas rzeczywisty.
+
+### Prawdziwe nagrania: GuitarSet
+
+Korpus syntetyczny pokazuje różnice między wersjami, ale nie dokładność na prawdziwej gitarze. Dlatego silnik jest też mierzony na
+**GuitarSet** (Xi i in., ISMIR 2018: 360 nagrań gitary akustycznej z mikrofonu, 6 gitarzystów, nuty z przetwornika heksafonicznego,
+akordy z partytury), skryptem `tools/guitarset_eval.py` z metrykami **mir_eval** (te same co w publikacjach). Strojone na graczach
+00–02, poniżej gracze 03–05:
+
+| GuitarSet, gracze 03–05 | poprzedni C++ | obecny C++ | obecny C++, okno 186 ms |
+|---|---:|---:|---:|
+| nuty, F1 początków (50 ms, ±50¢), wszystkie nagrania | 47,7 % | **56,0 %** | 57,8 % |
+| … precyzja / czułość | 66,5 / 39,8 % | 72,9 / 48,7 % | 75,7 / 50,0 % |
+| nuty z początkiem i końcem | 22,7 % | 24,9 % | 28,3 % |
+| nuty, melodie (solo) | 61,1 % | **69,4 %** | 71,0 % |
+| nuty, akompaniament | 34,3 % | **42,6 %** | 44,6 % |
+| akompaniament: prima akordu | 40,4 % | **45,7 %** | 45,7 % |
+| akompaniament: akord dur/moll (mir_eval majmin) | 34,0 % | **41,9 %** | 42,8 % |
+
+Wnioski: (1) na prawdziwych nagraniach nuty są dużo trudniejsze niż w korpusie: wykrywana jest mniej więcej połowa nut, a w akompaniamencie
+jedna trzecia (szybkie, tłumione uderzenia, krótkie nuty). Nuty krótsze niż 0,2 s to większość nut w melodiach i z nich trafiamy 26–40 %.
+(2) Krótsze okno (186 ms, w ustawieniach „Szybkie melodie”) daje lepsze nuty na GuitarSet, ale na korpusie syntetycznym akordy spadają
+(98,5 → 93,9 %, na żywo 95,4 → 92,6 %), a fałszywych dźwięków w akordach jest prawie 2× więcej, dlatego domyślne zostaje 372 ms.
+(3) Akordy w jazzie, funku i bossa novie (septymy, nony, często bez prymy) są rozpoznawane słabo (prima 18–28 %); rock i singer-songwriter 70–74 %.
+
+**Ostatnia runda: metody z `docs/BADANIA.md`** (efekty na zbiorach kontrolnych):
+
+| zmiana | efekt |
+|---|---|
+| **akordy z listy nut** (`chordsFromNotes`): uderzenia = grupy początków nut, nowe nuty w uderzeniu albo (arpeggio) także nuty brzmiące wcześniej, z wagą malejącą w czasie; spóźnione struny do 0,6 s dopełniają akord; nuty pasujące do akordu go nie zmieniają; wysokości widoczne w ramkach, ale niepotwierdzone jako nuty, dokładają słaby dowód (0,6) | korpus: akordy 96,3 → 98,5 %, ramki 95,5 → 97,5 %; GuitarSet (akompaniament): prima 40,4 → 45,7 %, dur/moll 34,0 → 41,9 %. Bez słabego dowodu z ramek prima na GuitarSet była gorsza od dawnej metody (48,7 vs 50,2 % na graczach 00–02), z nim 54,8 % |
+| **początek nuty liczony na wysokość** (`refineEvents`): energia każdego alikwotu osobno, okno 93 ms co 11,6 ms; alikwot nie świadczy w chwili, w której zaczyna się inna nuta, która go dzieli | korpus: początki w tolerancji 50 ms 54 → 74 %; w uderzeniu każda struna ma własny czas (mediana błędu początku 31 → 14 ms, zbiór roboczy) |
+| **ponowne szarpnięcie tej samej struny** dzielone na dwie nuty (skok ≥ 8 dB w alikwotach niewspólnych z nutami zaczynającymi się w tej chwili) | korpus, arpeggio: F1 początków 53 → 58 %; pokrycie nut +1 pkt. Wcześniejsza próba (README niżej) odrzucona, bo brała pod uwagę wszystkie wspólne alikwoty |
+| **model miejsca szarpnięcia w teście oktaw** (Traube i Smith): \|sin(π h p)\| dopasowane do nieparzystych alikwotów przewiduje parzyste | korpus, melodie: F1 początków 95,6 → 98,2 % (zbiór roboczy), mniej fałszywych oktaw nad pojedynczą struną |
+| **ocena łączna zbioru nut**: usuwanie nut, których alikwoty w całości wyjaśniają inne (poza podwojeniami oktawowymi) | mały zysk (F1 nut +0,1 pkt na zbiorze roboczym) |
+| **nieharmoniczność mierzona dla każdej wysokości**, potem węższe dopasowanie alikwotów | na korpusie bez efektu do oceny: syntezator losuje nieharmoniczność dla każdej nuty osobno, a w gitarze jest stała dla struny. Kontrolny: nuty +0,1 pkt, stroik −0,6 pkt |
+| przy analizie pliku nuty w ramkach i dowód akordu tylko z nut potwierdzonych przez tracker | korpus: F1 nut w ramkach +0,6 pkt |
+
+**Sprawdzone w tej rundzie i odrzucone**: zamiana poduktawy na oktawę wyżej w ocenie łącznej (duchy −25 %, ale gubi prawdziwy bas,
+bo słaby ton podstawowy niskiej struny wygląda tak samo jak duch; zostawiona w kodzie, wyłączona: `jointSwap`), dwa okna naraz
+(piki poniżej 400 Hz z okna 372 ms, powyżej z 186 ms; bez zysku na GuitarSet, zysk krótkiego okna bierze się z rozdzielczości czasu
+całego potoku), akord na żywo tylko z nut potwierdzonych przez tracker (na żywo akordy −0,9 pkt, większe opóźnienie i migotanie;
+dostępne jako `liveNotes`), okno 186 ms jako domyślne (patrz wyżej). Sieć neuronowa (Basic Pitch i podobne) nie jest dodana: wymaga
+dołączenia wag modelu i osobnego środowiska uruchomieniowego, to osobna decyzja.
+
+**Co poprawiło dokładność w poprzedniej rundzie** (zbiór kontrolny, względem wersji wcześniejszej):
 
 | zmiana | efekt |
 |---|---|
@@ -113,6 +162,9 @@ oktawowe lub struny wybrzmiewające szybciej niż okno analizy.
 node tools/wasm_run.js nagranie.wav wynik.json     # silnik z pliku .wasm w node (te same metryki co natywnie)
 node tools/test_exports.js nagranie.wav katalog    # eksporty: ZIP, WAV, MIDI, tabulatura, JSON
 node tools/ui_test.js katalog nagranie.wav         # Chromium (Playwright): demo, odtwarzanie, pobieranie, plik, mikrofon, tryb artefaktu
+# prawdziwe nagrania: GuitarSet (https://zenodo.org/records/3371780, annotation.zip + audio_mono-mic.zip), pip install mir_eval
+for f in mic/*.wav; do ./gt_cli analyze $f wyniki/$(basename $f _mic.wav).json; done
+python3 tools/guitarset_eval.py annotation wyniki --by-style
 ```
 
 ## Układ kodu

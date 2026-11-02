@@ -4,6 +4,23 @@ Cel: znajdować **wszystkie** grane dźwięki (czułość) i **nie dodawać fał
 granicami nut. Poniżej przegląd literatury dopasowany do obecnego silnika: każda pozycja mówi, który błąd
 z README atakuje, gdzie w kodzie ją wpiąć i jak sprawdzić, czy pomogła. Kolejność to szacowany zysk do kosztu.
 
+## Stan wdrożenia (listopad 2026)
+
+Każdy punkt wdrożony i zmierzony na korpusie syntetycznym (zbiór kontrolny) oraz na prawdziwych nagraniach **GuitarSet**
+(strojenie na graczach 00–02, wynik na 03–05). Szczegóły i liczby: README, sekcje „Prawdziwe nagrania” i „Ostatnia runda”.
+
+| # | metoda | stan | wynik |
+|---|---|---|---|
+| 1 | ocena łączna zbioru nut | wdrożone usuwanie nut w całości wyjaśnionych przez inne; zamiana poduktawy na oktawę wyżej **wyłączona** | mały zysk; zamiana gubiła prawdziwy bas |
+| 2 | model miejsca szarpnięcia w teście oktaw | wdrożone | mniej fałszywych oktaw w melodiach (F1 początków 95,6 → 98,2 % na zbiorze roboczym) |
+| 3 | nieharmoniczność na wysokość | wdrożone | korpus nie pozwala ocenić (losowa nieharmoniczność na nutę); neutralne |
+| 4 | początki nut na wysokość, ponowne szarpnięcia | wdrożone (po analizie pliku) | początki w 50 ms: 54 → 74 % (korpus); GuitarSet: F1 nut 47,7 → 56,0 % łącznie z resztą zmian |
+| 5 | krótsze okno / dwa okna | dwa okna bez zysku (odrzucone); okno 186 ms dostępne w ustawieniach | lepsze nuty na GuitarSet, gorsze akordy na korpusie, więc nie domyślnie |
+| 6 | ComplexFlux, lepszy wybór pików | nie wdrożone | początki poprawiono przez pkt 4 (funkcja początku na wysokość) |
+| 7 | sieć neuronowa | nie wdrożone | wymaga wag modelu i osobnego środowiska; osobna decyzja |
+| 8 | pomiar na prawdziwych nagraniach | wdrożone: `tools/guitarset_eval.py`, mir_eval, 50 ms | patrz README |
+| + | **akordy składane z nut** (prośba użytkownika) | wdrożone przy analizie pliku; na żywo zostaje dowód z ramek (z samych nut gorzej) | GuitarSet, akompaniament: prima 40,4 → 45,7 %, dur/moll 34,0 → 41,9 % |
+
 Stan wyjściowy (holdout, z README): F1 nut 81,0 %, F1 początków 79,5 %, pokrycie czasu nuty 74,3 %,
 fałszywe dźwięki to głównie **poduktawy** (E2 zamiast E3), a na czystych melodiach zdarza się **fałszywa oktawa wyżej**.
 Ok. 15 % nut z długim ogonem to niewykryte podwojenia oktawowe.
