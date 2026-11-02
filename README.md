@@ -118,6 +118,22 @@ całego potoku), akord na żywo tylko z nut potwierdzonych przez tracker (na ży
 dostępne jako `liveNotes`), okno 186 ms jako domyślne (patrz wyżej). Sieć neuronowa (Basic Pitch i podobne) nie jest dodana: wymaga
 dołączenia wag modelu i osobnego środowiska uruchomieniowego, to osobna decyzja.
 
+**Kontekst czasowy: poprzednie i następne chwile** (sprawdzone, w pomiarze bez zysku, domyślnie wyłączone). Silnik już korzysta z historii:
+nuta musi być widoczna przez 85 ms, przerwy do 130 ms są mostkowane, nuta, która brzmiała, jest szukana dalej z obniżonym progiem
+(podtrzymanie), ręka nie skacze szybciej, niż zdąży, a akord dopełniają spóźnione struny. Dodatkowo sprawdzone (zbiór roboczy korpusu
+i GuitarSet, gracze 00–02):
+
+| mechanizm | parametr | wynik |
+|---|---|---|
+| dopowiadanie nut z sąsiednich uderzeń (±4 s): wysokość grana obok, a tu niewykryta, jeśli po uderzeniu ma ≥ 4 własne alikwoty ponad szumem i nie brzmiała tuż przed nim | `context`, `ctxFill` | korpus: 17 trafnych i 12 błędnych dodanych nut (akordy −0,3 pkt); GuitarSet: prawie nic nie dodaje. Pierwsza wersja (dowodem był atak w alikwotach) dodawała 655 błędnych nut na 7 trafnych: szum uderzenia podnosi wszystkie alikwoty naraz |
+| sklejanie przerwanej nuty bez nowego ataku | `ctxMerge` | GuitarSet: F1 nut −1 pkt (skleja ponowne uderzenia tego samego akordu) |
+| usuwanie krótkich nut bez ataku | `ctxPrune` | bez wpływu (±0,03 pkt) |
+| premia w detektorze dla wysokości słyszanych w ostatnich 3 s (działa też na żywo) | `prior` 1,3 / 1,6 | korpus: akordy 96,8 → 95,9 / 94,5 %; GuitarSet: nuty w akompaniamencie 35,5 → 34,5 %. System trzyma się starego akordu, gdy gracz zmienia chwyt |
+| dłuższe mostkowanie przerw | `release` 0,22 s | zbiory kontrolne: wynik mieszany (korpus: akordy −0,6, nuty +0,4 pkt; GuitarSet: akordy +0,7, nuty z końcem −0,5 pkt), zostaje 0,13 s |
+
+Wniosek: tam, gdzie nuta istnieje w widmie, historia jest już wykorzystana; brakujące nuty na prawdziwych nagraniach to głównie krótkie
+nuty rozmyte przez długie okno i ciche struny w akompaniamencie, których historia nie podpowiada.
+
 **Co poprawiło dokładność w poprzedniej rundzie** (zbiór kontrolny, względem wersji wcześniejszej):
 
 | zmiana | efekt |

@@ -37,6 +37,21 @@ struct EngineConfig {
   double susEvidence = 2.5; // ile punktów dowodu potrzeba (alikwot niezależny = 1, wspólny z niższą nutą = 0,5)
   bool refine = true;
   // docinanie granic nut krótkim oknem po analizie pliku (refine)
+  double prior = 1.0;       // premia w detektorze dla wysokości słyszanych niedawno (1 = wyłączona)
+  double priorSec = 3.0;    // jak daleko wstecz [s]
+  // kontekst czasowy (analiza pliku): poprzednie i następne chwile pomagają poprawić bieżącą
+  bool context = false;    // w pomiarze bez zysku (README), dostępne do eksperymentów
+  bool ctxFill = true;     // dopowiadanie nut z sąsiednich uderzeń, gdy w ich alikwotach widać atak
+  double ctxSpan = 4.0;    // jak daleko [s] w przód i w tył szukać kandydatów
+  double ctxAt = 0.30;     // środek okna sprawdzającego dopowiadaną nutę [s po uderzeniu]
+  double ctxK = 4.5;       // próg szumu dla alikwotów dopowiadanej nuty (zwykły próg pików: 4,5)
+  double ctxEvidence = 4;  // ile punktów dowodu (alikwot niezależny = 1, wspólny z niższą nutą = 0,5)
+  double ctxRise = 6.0;    // minimalny atak [dB / 35 ms] we własnych alikwotach kandydata
+  double ctxDrop = 18.0;   // poziom po ataku najwyżej tyle dB poniżej poziomu tej nuty w sąsiednim uderzeniu
+  bool ctxMerge = true;    // sklejanie przerwanej nuty (ta sama wysokość, krótka przerwa, bez nowego ataku)
+  double ctxGap = 0.25;    // najdłuższa przerwa do sklejenia [s]
+  bool ctxPrune = true;    // usuwanie krótkich nut bez ataku we własnych alikwotach
+  double ctxShort = 0.15;  // "krótka" nuta [s]
   bool resplit = true;     // dzielenie nuty na ponowne szarpnięcia tej samej struny
   bool segShared = true;   // funkcja początku tylko z alikwotów niewspólnych z innymi nutami
   double splitDb = 8;      // skok energii [dB], od którego brzmiąca nuta jest uznana za ponownie szarpniętą
@@ -45,7 +60,7 @@ struct EngineConfig {
   double segMove = 0.0;    // przesuwaj początek tylko o więcej niż tyle [s]
   double segOffset = 0.03; // poprawka czasu (środek okna -> rzeczywisty początek) [s]
   double endLag = 0.25;    // część okna analizy odejmowana od końca nuty (0,5 = dokładnie dla nut urwanych, 0 = dla zanikających)
-  double release = 0.13;   // tolerancja na chwilowy zanik nuty [s]
+  double release = 0.13;   // tolerancja na chwilowy zanik nuty [s] (0,22 sprawdzone: wynik mieszany, README)
   double susHold = 4.0;    // jak długo [s] próg pozostaje niski; potem rośnie do zwykłego w ciągu kolejnych 10 s
   bool freshFull = true;   // nowe nuty liczą się do akordu od pierwszej ramki po uderzeniu
   bool chordsFromNotes = true; // analiza pliku: akordy składane z gotowej listy nut (nuty są podstawą, akord to ich nazwa)
@@ -170,6 +185,7 @@ public:
     tracker_.endAll(nd_ / fsd_);
     finished_ = true;
     if (keepDecimated_ && cfg_.refine && !dfull_.empty()) refineEvents();
+    if (keepDecimated_ && cfg_.context && !dfull_.empty()) contextRepair();
     if (keepDecimated_ && cfg_.chordsFromNotes) chordsFromNotes();
     std::vector<float>().swap(dfull_);
   }
@@ -260,6 +276,7 @@ private:
   Ring ring_;
   OnsetDetector onset_;
   Spectrum spec_;
+  mutable Spectrum spx_;   // widmo pomocnicze dla poprawek z kontekstu
   MultiPitch mp_;
   NoteTracker tracker_;
   HandTracker hand_;
@@ -314,6 +331,7 @@ private:
   void setupWindow() {
     win_ = cfg_.win;
     spec_.init(win_, fsd_, win_ <= 4096 ? 4 : 2);
+    spx_.init(win_, fsd_, win_ <= 4096 ? 4 : 2);
     xbuf_.assign(win_, 0.f);
     MultiPitch::Options o;
     o.fs = fsd_;
@@ -436,6 +454,13 @@ private:
       po.minAmp = std::pow(10.0, gateEff_ / 20) * 0.35;
       spec_.pickPeaks(po, peaks_);
       if (cfg_.autoTune && !prepassed_) liveTuning();
+      if (cfg_.prior > 1.0) {
+        // historia: nuty brzmiące teraz albo zakończone w ostatnich priorSec sekundach
+        std::vector<int> pm;
+        for (const auto& kv : tracker_.active) pm.push_back(kv.first);
+        for (auto it = tracker_.events.rbegin(); it != tracker_.events.rend() && it->t1 > t - cfg_.priorSec; ++it) pm.push_back(it->midi);
+        mp_.setPrior(pm, cfg_.prior);
+      }
       mp_.detect(peaks_, dets_);
       if (cfg_.sustain) addSustained(t);
       fr.handRejected = (uint8_t)std::min(255, hand_.filter(dets_, t, lastOnset_ < 0 ? 1e9 : t - lastOnset_, wSec));
@@ -621,6 +646,172 @@ private:
     }
     std::sort(out.begin(), out.end(), [](const NoteEvent2& a, const NoteEvent2& b) { return a.t0 < b.t0 || (a.t0 == b.t0 && a.midi < b.midi); });
     evs.swap(out);
+  }
+
+  // ---------------------------------------------------------------- kontekst czasowy
+  // Atak nuty o częstotliwości f0 w chwili t: narastanie energii w jej alikwotach (bez tych, które dzieli z nutami `excl`
+  // zaczynającymi się w tej chwili). rise = największe narastanie [dB/35 ms] w [t-0,06; t+0,12], before/after = poziom przed i po.
+  bool attackAt(double f0, double t, const std::vector<double>& excl, double& rise, double& before, double& after) const {
+    const double fsd = fsd_, B = 2.5e-4, minF = 35.0 * fsd / 1024;
+    std::vector<double> parts;
+    for (int h = 1; h <= 16 && parts.size() < 4; ++h) {
+      const double fh = h * f0 * std::sqrt(1 + B * h * h);
+      if (fh > 0.45 * fsd || fh > 3500) break;
+      if (fh < minF) continue;
+      bool sh = false;
+      for (double fo : excl) {
+        for (int k = 1; k <= 16 && !sh; ++k) { const double x = k * fo * std::sqrt(1 + B * k * k); if (x > 3600) break; if (std::fabs(1200 * std::log2(fh / x)) < 60) sh = true; }
+        if (sh) break;
+      }
+      if (!sh) parts.push_back(fh);
+    }
+    if (parts.empty()) return false;
+    std::vector<double> tt;
+    std::vector<std::vector<double>> en;
+    partialTracks(parts, t - 0.35, t + 0.35, tt, en);
+    const int M = (int)tt.size(), d = 3;
+    if (M < 10) return false;
+    std::vector<double> db(M);
+    for (int i = 0; i < M; ++i) { double x = 0; for (const auto& e : en) x += e[i]; db[i] = 10 * std::log10(x + 1e-12); }
+    rise = -1e9; before = 1e9; after = -1e9;
+    for (int i = 1; i + d < M; ++i) {
+      const double tc = tt[i] + cfg_.segOffset;
+      if (tc >= t - 0.06 && tc <= t + 0.12) rise = std::max(rise, db[i + d] - db[i - 1]);
+      if (tt[i] >= t - 0.30 && tt[i] <= t - 0.12) before = std::min(before, db[i]);
+      if (tt[i] >= t + 0.05 && tt[i] <= t + 0.30) after = std::max(after, db[i]);
+    }
+    return rise > -1e8 && after > -1e8;
+  }
+
+  double evF0(const NoteEvent2& e) const { return e.f > 0 ? e.f : midiFreq(e.midi, mp_.a4()); }
+
+  // Dowód obecności wysokości f0 w widmie spx_: alikwoty 1..8 wyraźnie ponad lokalnym szumem (ctxK), niewspólne z nutami `other`
+  // (1 pkt), wspólne tylko z nutą niższą (0,5 pkt, jak przy podtrzymaniu). Zwraca sumę punktów.
+  double harmonicEvidence(double f0, const std::vector<double>& other) const {
+    const auto& mag = spx_.mag();
+    const auto& nf = spx_.noiseFloor();
+    const double bh = spx_.binHz(), B = 2.5e-4;
+    const int K = (int)mag.size();
+    double evd = 0;
+    for (int h = 1; h <= 8; ++h) {
+      const double fh = h * f0 * std::sqrt(1 + B * h * h);
+      if (fh > 4800 || fh > 0.45 * fsd_) break;
+      const double tol = 25 + 1.5 * h;
+      const int k0 = std::max(2, (int)std::floor(fh * std::pow(2.0, -tol / 1200) / bh)), k1 = std::min(K - 2, (int)std::ceil(fh * std::pow(2.0, tol / 1200) / bh));
+      double mb = 0; int kb = -1;
+      for (int q = k0; q <= k1; ++q) if (mag[q] > mb && mag[q] >= mag[q - 1] && mag[q] >= mag[q + 1]) { mb = mag[q]; kb = q; }
+      if (kb < 0 || mb < cfg_.ctxK * nf[kb] || mb < std::pow(10.0, gateEff_ / 20) * 0.35) continue;
+      bool low = false, high = false;
+      for (double fo : other)
+        for (int k = 1; k <= 12; ++k) {
+          const double x = k * fo * std::sqrt(1 + B * k * k);
+          if (std::fabs(1200 * std::log2(fh / x)) < 45) { (fo < f0 ? low : high) = true; break; }
+        }
+      if (high) continue;
+      evd += low ? 0.5 : 1.0;
+    }
+    return evd;
+  }
+
+  // Poprawki z kontekstu czasowego, po dopracowaniu granic nut:
+  //  1. dopowiadanie: wysokość grana w sąsiednich uderzeniach (do ctxSpan s wstecz i w przód), a w tym uderzeniu niewykryta,
+  //     jest dodawana, jeśli w jej własnych alikwotach widać atak (>= ctxRise) i poziom po ataku jest podobny jak tam,
+  //  2. sklejanie: ta sama wysokość przerwana na krótko (< ctxGap) bez nowego ataku to jedna nuta,
+  //  3. usuwanie: nuta krótsza niż ctxShort bez ataku we własnych alikwotach to przebłysk, nie zagrany dźwięk.
+  void contextRepair() {
+    auto& ev = tracker_.events;
+    auto byT = [](const NoteEvent2& a, const NoteEvent2& b) { return a.t0 < b.t0 || (a.t0 == b.t0 && a.midi < b.midi); };
+    std::sort(ev.begin(), ev.end(), byT);
+    // 3. usuwanie przebłysków
+    if (cfg_.ctxPrune) {
+      std::vector<NoteEvent2> keep;
+      for (size_t i = 0; i < ev.size(); ++i) {
+        const NoteEvent2& e = ev[i];
+        if (e.t1 - e.t0 >= cfg_.ctxShort) { keep.push_back(e); continue; }
+        std::vector<double> ex;
+        for (const auto& o : ev) if (&o != &e && o.midi != e.midi && std::fabs(o.t0 - e.t0) < 0.12) ex.push_back(evF0(o));
+        double r, b, a;
+        if (!attackAt(evF0(e), e.t0, ex, r, b, a) || r >= cfg_.ctxRise) keep.push_back(e);
+      }
+      ev.swap(keep);
+    }
+    // 2. sklejanie przerwanych nut
+    if (cfg_.ctxMerge) {
+      std::sort(ev.begin(), ev.end(), [](const NoteEvent2& a, const NoteEvent2& b) { return a.midi < b.midi || (a.midi == b.midi && a.t0 < b.t0); });
+      std::vector<NoteEvent2> out;
+      for (const auto& e : ev) {
+        if (!out.empty() && out.back().midi == e.midi && e.t0 - out.back().t1 < cfg_.ctxGap && e.t0 >= out.back().t0) {
+          std::vector<double> ex;
+          for (const auto& o : ev) if (o.midi != e.midi && std::fabs(o.t0 - e.t0) < 0.12) ex.push_back(evF0(o));
+          double r, b, a;
+          const bool attack = attackAt(evF0(e), e.t0, ex, r, b, a) && r >= cfg_.splitDb;
+          if (!attack) { out.back().t1 = std::max(out.back().t1, e.t1); out.back().vel = std::max(out.back().vel, e.vel); continue; }
+        }
+        out.push_back(e);
+      }
+      ev.swap(out);
+      std::sort(ev.begin(), ev.end(), byT);
+    }
+    // 1. dopowiadanie z sąsiednich uderzeń
+    if (cfg_.ctxFill) {
+      std::vector<double> starts, ends;
+      for (const auto& e : ev) {
+        if (starts.empty() || e.t0 - ends.back() > cfg_.chGroup || e.t0 - starts.back() > 0.25) { starts.push_back(e.t0); ends.push_back(e.t0); }
+        else ends.back() = e.t0;
+      }
+      std::vector<NoteEvent2> add;
+      for (size_t g = 0; g < starts.size(); ++g) {
+        const double a = starts[g], ga = ends[g];
+        std::vector<int> here;
+        std::vector<double> exF;
+        double gEnd = a;
+        int nHere = 0;
+        for (const auto& e : ev) {
+          if (e.t0 >= a - 0.02 && e.t0 <= ga + 0.02) { here.push_back(e.midi); exF.push_back(evF0(e)); gEnd = std::max(gEnd, e.t1); ++nHere; }
+          else if (e.t0 < a && e.t1 > a + 0.05) here.push_back(e.midi); // nadal brzmi
+        }
+        if (nHere < 3) continue; // dopowiadamy tylko w uderzeniach (kilka strun naraz)
+        std::vector<const NoteEvent2*> cands;
+        for (const auto& e : ev) {
+          if (std::fabs(e.t0 - a) > cfg_.ctxSpan || (e.t0 >= a - 0.02 && e.t0 <= ga + 0.02)) continue;
+          if (std::find(here.begin(), here.end(), e.midi) != here.end()) continue;
+          bool dup = false;
+          for (const auto* c : cands) if (c->midi == e.midi) { dup = true; if (std::fabs(e.t0 - a) < std::fabs(c->t0 - a)) { const NoteEvent2* x = &e; for (auto& cc : cands) if (cc->midi == e.midi) cc = x; } }
+          if (!dup) cands.push_back(&e);
+        }
+        // widmo ustalone po uderzeniu (długie okno), wysokości brzmiące w tej chwili
+        const double tc = a + cfg_.ctxAt;
+        const int64_t c0 = (int64_t)(tc * fsd_) - win_ / 2;
+        if (c0 < 0 || c0 + win_ > (int64_t)dfull_.size()) continue;
+        // widmo tuż przed uderzeniem (okno kończy się przed atakiem): wysokość słyszalna już wtedy to wybrzmiewanie, nie nowe szarpnięcie
+        const int64_t p0 = (int64_t)((a - 0.02) * fsd_) - win_;
+        std::vector<double> preEv(cands.size(), 0.0);
+        if (p0 >= 0) {
+          spx_.compute(dfull_.data() + p0);
+          std::vector<double> preF;
+          for (const auto& e : ev) if (e.t0 <= a - 0.1 && e.t1 >= a - 0.1) preF.push_back(evF0(e));
+          for (size_t k = 0; k < cands.size(); ++k) preEv[k] = harmonicEvidence(evF0(*cands[k]), preF);
+        }
+        spx_.compute(dfull_.data() + c0);
+        std::vector<double> soundF;
+        for (const auto& e : ev) if (e.t0 <= tc && e.t1 >= tc) soundF.push_back(evF0(e));
+        for (size_t k = 0; k < cands.size(); ++k) {
+          const NoteEvent2* c = cands[k];
+          if (preEv[k] >= cfg_.ctxEvidence - 1) continue;
+          const double ev_ = harmonicEvidence(evF0(*c), soundF);
+          if (ev_ < cfg_.ctxEvidence) continue;
+          NoteEvent2 n = *c;
+          n.t0 = a; n.t1 = std::max(a + 0.1, gEnd);
+          for (const auto& o : ev) if (o.midi == c->midi && o.t0 > a) n.t1 = std::min(n.t1, o.t0);
+          n.vel = std::max(20, c->vel - 8);
+          add.push_back(n);
+          here.push_back(c->midi);
+          soundF.push_back(evF0(*c));
+        }
+      }
+      for (const auto& n : add) ev.push_back(n);
+      std::sort(ev.begin(), ev.end(), byT);
+    }
   }
 
   // ---------------------------------------------------------------- akordy z nut

@@ -78,6 +78,12 @@ public:
   }
 
   double a4() const { return a4_; }
+  std::vector<uint8_t> prior_;  // 1 = wysokość brzmiała niedawno
+  double priorBoost_ = 1.0;
+  void setPrior(const std::vector<int>& midis, double boost) {
+    prior_.assign(cands_.size(), 0); priorBoost_ = boost;
+    for (int m : midis) if (m >= o_.lo && m <= o_.hi) prior_[m - o_.lo] = 1;
+  }
   double jointTol0_ = 18, jointTol1_ = 1.0, jointH1_ = 0.35;
   void setOctModel(bool on, double thr, double mono) { o_.octModel = on; o_.octModelThr = thr; o_.octModelThrMono = mono; }
   void setLearnB(bool on, double t0, double t1) {
@@ -143,7 +149,9 @@ public:
         if (dbgMidi_ == c.m) fprintf(stderr, "  [dbg] it=%d midi=%d f0=%.1f m6=%d un=%d h1un=%d sal=%.3f\n", it, c.m, c.f0, m6, un, (int)h1un, sal);
 #endif
         if (m6 < (c.f0 < 450 ? 3 : 2) || (un < 2 && !(h1un && m6 >= 3))) continue;
-        const double score = sal * (0.55 + 0.45 * m6 / std::min<size_t>(6, c.hf.size()));
+        double score = sal * (0.55 + 0.45 * m6 / std::min<size_t>(6, c.hf.size()));
+        // wysokość słyszana w ostatnich chwilach (prior z historii): system się jej spodziewa
+        if (!prior_.empty() && prior_[ci]) score *= priorBoost_;
         if (bestC < 0 || score > bestScore) {
           bestC = (int)ci; bestScore = score; bestM6 = m6;
           for (size_t h = 0; h < c.hf.size(); ++h) bestIdx_[h] = idx_[h];
