@@ -23,6 +23,19 @@ int main(int argc, char** argv) {
     else if (!strcmp(argv[i], "--win") && i + 1 < argc) cfg.win = atoi(argv[++i]);
     else if (!strcmp(argv[i], "--no-octaves")) cfg.octaves = false;
     else if (!strcmp(argv[i], "--no-hand")) cfg.hand = false;
+    else if (!strcmp(argv[i], "--no-joint")) cfg.joint = false;
+    else if (!strcmp(argv[i], "--no-resplit")) cfg.resplit = false;
+    else if (!strcmp(argv[i], "--no-segshared")) cfg.segShared = false;
+    else if (!strcmp(argv[i], "--splitdb") && i + 1 < argc) cfg.splitDb = atof(argv[++i]);
+    else if (!strcmp(argv[i], "--segrise") && i + 1 < argc) cfg.segRise = atof(argv[++i]);
+    else if (!strcmp(argv[i], "--segback") && i + 1 < argc) cfg.segBack = atof(argv[++i]);
+    else if (!strcmp(argv[i], "--segmove") && i + 1 < argc) cfg.segMove = atof(argv[++i]);
+    else if (!strcmp(argv[i], "--segoff") && i + 1 < argc) cfg.segOffset = atof(argv[++i]);
+    else if (!strcmp(argv[i], "--no-octmodel")) cfg.octModel = false;
+    else if (!strcmp(argv[i], "--omthr") && i + 1 < argc) cfg.octModelThr = atof(argv[++i]);
+    else if (!strcmp(argv[i], "--ommono") && i + 1 < argc) cfg.octModelThrMono = atof(argv[++i]);
+    else if (!strcmp(argv[i], "--jswap") && i + 1 < argc) cfg.jointSwap = atof(argv[++i]);
+    else if (!strcmp(argv[i], "--jdrop") && i + 1 < argc) cfg.jointDrop = atof(argv[++i]);
     else if (!strcmp(argv[i], "--no-sustain")) cfg.sustain = false;
     else if (!strcmp(argv[i], "--no-refine")) cfg.refine = false;
     else if (!strcmp(argv[i], "--no-fresh")) cfg.freshFull = false;
@@ -40,6 +53,8 @@ int main(int argc, char** argv) {
     else if (!strcmp(argv[i], "--size") && i + 1 < argc) cfg.chord.sizePenalty = (float)atof(argv[++i]);
     else if (!strcmp(argv[i], "--presence") && i + 1 < argc) cfg.chord.presence = (float)atof(argv[++i]);
   }
+  double jt0 = -1, jt1 = -1, jh1 = -1;
+  for (int i = 4; i + 1 < argc; ++i) { if (!strcmp(argv[i], "--jh1")) jh1 = atof(argv[i + 1]); if (!strcmp(argv[i], "--jt0")) jt0 = atof(argv[i + 1]); if (!strcmp(argv[i], "--jt1")) jt1 = atof(argv[i + 1]); }
   std::vector<float> x;
   int fs = 44100;
   if (!wavio::read16(argv[2], x, fs)) { fprintf(stderr, "nie można wczytać %s\n", argv[2]); return 1; }
@@ -47,6 +62,9 @@ int main(int argc, char** argv) {
   Engine eng;
   eng.configure(cfg);
   eng.begin(fs);
+  if (jt0 >= 0) eng.dbgPitch().jointTol0_ = jt0;
+  if (jt1 >= 0) eng.dbgPitch().jointTol1_ = jt1;
+  if (jh1 >= 0) eng.dbgPitch().jointH1_ = jh1;
   if (!live) eng.prepass(x.data(), x.size());
   const size_t chunk = live ? 1024 : 8192;
   for (size_t i = 0; i < x.size(); i += chunk) eng.push(x.data() + i, (int)std::min(chunk, x.size() - i));

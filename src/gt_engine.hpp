@@ -36,7 +36,14 @@ struct EngineConfig {
   double susK = 2.0;       // próg szumu dla nuty podtrzymanej tuż po mocnym wykryciu (zwykły: 4,5)
   double susEvidence = 2.5; // ile punktów dowodu potrzeba (alikwot niezależny = 1, wspólny z niższą nutą = 0,5)
   bool refine = true;
-  double splitDb = 8;      // skok energii [dB], od którego brzmiąca nuta jest uznana za ponownie szarpniętą      // docinanie granic nut krótkim oknem po analizie pliku
+  // docinanie granic nut krótkim oknem po analizie pliku (refine)
+  bool resplit = true;     // dzielenie nuty na ponowne szarpnięcia tej samej struny
+  bool segShared = true;   // funkcja początku tylko z alikwotów niewspólnych z innymi nutami
+  double splitDb = 8;      // skok energii [dB], od którego brzmiąca nuta jest uznana za ponownie szarpniętą
+  double segRise = 6;      // minimalne narastanie [dB / 35 ms] przy szukaniu początku
+  double segBack = 0.30;   // jak daleko przed dotychczasowym początkiem szukać [s]
+  double segMove = 0.0;    // przesuwaj początek tylko o więcej niż tyle [s]
+  double segOffset = 0.03; // poprawka czasu (środek okna -> rzeczywisty początek) [s]
   double endLag = 0.25;    // część okna analizy odejmowana od końca nuty (0,5 = dokładnie dla nut urwanych, 0 = dla zanikających)
   double release = 0.13;   // tolerancja na chwilowy zanik nuty [s]
   double susHold = 4.0;    // jak długo [s] próg pozostaje niski; potem rośnie do zwykłego w ciągu kolejnych 10 s
@@ -45,6 +52,10 @@ struct EngineConfig {
   bool handMotion = true;  // ... także skoki ręki szybsze, niż ręka zdąży
   double octRatio = 1.4;     // próg nadwyżki parzystych alikwotów dla podwojenia oktawowego w akordzie
   double octRatioMono = 2.2; // ... przy pojedynczej nucie
+  bool octModel = true;      // test podwojeń oktawowych z modelem miejsca szarpnięcia (Traube i Smith)
+  double octModelThr = 1.4, octModelThrMono = 2.5;
+  bool joint = true;         // ocena łączna zbioru nut (poduktawy, nuty wyjaśnione przez inne)
+  double jointSwap = 0.0, jointDrop = 0.12; // zamiana poduktawy wyłączona: w pomiarze gubiła prawdziwy bas
   int tuning = 0;          // indeks w kTunings
   int recordMaxSec = 1200; // limit nagrania w pamięci
   ChordParams chord;
@@ -81,6 +92,8 @@ public:
     tracker_.releaseSec = c.release; tracker_.endLagFrac = c.endLag;
     if (!ready_) return;
     if (rebuild) setupWindow();
+    mp_.setJoint(cfg_.joint, cfg_.jointSwap, cfg_.jointDrop);
+    mp_.setOctModel(cfg_.octModel, cfg_.octModelThr, cfg_.octModelThrMono);
     mp_.setRange(kTunings[cfg_.tuning].open[0], kTunings[cfg_.tuning].open[5] + 24);
     hand_.configure(kTunings[cfg_.tuning].open, cfg_.hand, cfg_.handMotion);
     setReference(cfg_.a4 * std::pow(2.0, tuneCents_ / 1200.0));
@@ -209,6 +222,7 @@ public:
     tracker_.events.clear(); chordLog_.clear(); onsets_.clear();
   }
   bool finished() const { return finished_; }
+  MultiPitch& dbgPitch() { return mp_; }
 
   const std::vector<NoteEvent2>& events() const { return tracker_.events; }
   std::vector<NoteEvent2> allEvents() const {
@@ -292,6 +306,7 @@ private:
     o.octaves = cfg_.octaves;
     o.octRatio = cfg_.octRatio;
     o.octRatioMono = cfg_.octRatioMono;
+    o.joint = cfg_.joint; o.jointSwap = cfg_.jointSwap; o.jointDrop = cfg_.jointDrop;
     mp_.init(o, cfg_.a4);
   }
 
@@ -460,68 +475,134 @@ private:
 
 
   // ---------------------------------------------------------------- granice nut krótkim oknem
-  // Długie okno (372 ms) rozpoznaje wysokość, ale rozmywa granice o ~0,2 s. Po analizie pliku dla każdej nuty liczymy
-  // obwiednię energii w jej alikwotach powyżej ~380 Hz (tam okno 93 ms odróżnia sąsiednie półtony) i przesuwamy:
-  //  * początek do najstromszego narastania w pobliżu (w arpeggio nuta dostawała czas następnego uderzenia),
-  //  * koniec do najstromszego spadku, ale tylko gdy jest wyraźny (>= 10 dB), więc nuty zanikające naturalnie zostają.
-  void refineEvents() {
-    const int L = 1024, hop = 256;
-    const double fsd = fsd_, B = 2.5e-4, minF = 35.0 * fsd / L;
+  // Długie okno (372 ms) dobrze rozpoznaje wysokość, ale rozmywa czas. Po analizie pliku każda nuta dostaje własną funkcję
+  // początku (pitch-wise onset, por. Onsets and Frames; Ryynänen i Klapuri): energia w oknie 93 ms, krok 11,6 ms, tylko w jej
+  // alikwotach powyżej ~380 Hz i tylko w tych, których nie dzieli z innymi nutami brzmiącymi w tym czasie (inaczej wejście
+  // innej struny wyglądałoby jak ponowne szarpnięcie). Z tej funkcji:
+  //  * początek: najstromsze narastanie przy dotychczasowym początku (w uderzeniu każda struna dostaje własny czas),
+  //  * ponowne szarpnięcie tej samej struny w trakcie nuty: wyraźny skok energii po spadku -> podział na dwie nuty,
+  //  * koniec: najstromszy spadek, ale tylko wyraźny (>= 10 dB), więc nuty zanikające naturalnie zostają.
+  // energia każdego alikwotu osobno (okno 1024 = 93 ms, krok 128 = 11,6 ms), czasy = środki okien
+  void partialTracks(const std::vector<double>& parts, double ta, double tb, std::vector<double>& tt, std::vector<std::vector<double>>& en) const {
+    const int L = 1024, hop = 128;
+    const double fsd = fsd_;
     static std::vector<double> win;
     if ((int)win.size() != L) { win.resize(L); for (int i = 0; i < L; ++i) win[i] = 0.5 - 0.5 * std::cos(2 * kPi * i / L); }
     const int64_t N = (int64_t)dfull_.size();
-    for (auto& e : tracker_.events) {
+    tt.clear(); en.assign(parts.size(), std::vector<double>());
+    const int64_t s0 = std::max<int64_t>(0, (int64_t)(ta * fsd) - L / 2), s1 = std::min<int64_t>(N - L, (int64_t)(tb * fsd) - L / 2);
+    for (int64_t s = s0; s <= s1; s += hop) {
+      for (size_t k = 0; k < parts.size(); ++k) {
+        const double w = 2 * kPi * parts[k] / fsd, cw = std::cos(w), sw = std::sin(w);
+        double c = 1, sn = 0, re = 0, im = 0;
+        const float* x = dfull_.data() + s;
+        for (int i = 0; i < L; ++i) {
+          const double v = x[i] * win[i];
+          re += v * c; im -= v * sn;
+          const double c2 = c * cw - sn * sw; sn = sn * cw + c * sw; c = c2;
+        }
+        en[k].push_back(re * re + im * im);
+      }
+      tt.push_back((s + L / 2) / fsd);
+    }
+  }
+
+  void refineEvents() {
+    const double fsd = fsd_, B = 2.5e-4, minF = 35.0 * fsd / 1024, hopT = 128 / fsd;
+    auto& evs = tracker_.events;
+    std::sort(evs.begin(), evs.end(), [](const NoteEvent2& a, const NoteEvent2& b) { return a.t0 < b.t0; });
+    std::vector<NoteEvent2> out;
+    std::vector<double> tt;
+    std::vector<std::vector<double>> en;
+    for (size_t ei = 0; ei < evs.size(); ++ei) {
+      NoteEvent2 e = evs[ei];
       const double f0 = e.f > 0 ? e.f : midiFreq(e.midi, mp_.a4());
       std::vector<double> parts;
-      for (int h = 1; h <= 16 && (int)parts.size() < 3; ++h) {
+      for (int h = 1; h <= 16 && parts.size() < 4; ++h) {
         const double fh = h * f0 * std::sqrt(1 + B * h * h);
         if (fh > 0.45 * fsd || fh > 3500) break;
         if (fh >= minF) parts.push_back(fh);
       }
-      if (parts.empty()) continue;
-      const double ta = e.t0 - 0.5, tb = e.t1 + 0.45;
-      const int64_t s0 = std::max<int64_t>(0, (int64_t)(ta * fsd) - L / 2), s1 = std::min<int64_t>(N - L, (int64_t)(tb * fsd) - L / 2);
-      if (s1 <= s0 + 4 * hop) continue;
-      std::vector<double> tt, db;
-      for (int64_t s = s0; s <= s1; s += hop) {
-        double en = 0;
-        for (double fh : parts) {
-          const double w = 2 * kPi * fh / fsd, cw = std::cos(w), sw = std::sin(w);
-          double c = 1, sn = 0, re = 0, im = 0;
-          const float* x = dfull_.data() + s;
-          for (int i = 0; i < L; ++i) {
-            const double v = x[i] * win[i];
-            re += v * c; im -= v * sn;
-            const double c2 = c * cw - sn * sw; sn = sn * cw + c * sw; c = c2;
+      if (parts.empty()) { out.push_back(e); continue; }
+      // dla każdego alikwotu: początki innych nut (innej wysokości), które go współdzielą; w ich pobliżu ten alikwot nie świadczy
+      std::vector<std::vector<double>> sharedOn(parts.size());
+      if (cfg_.segShared)
+        for (size_t j = 0; j < evs.size(); ++j) {
+          if (j == ei || evs[j].midi == e.midi || evs[j].t0 > e.t1 + 0.3 || evs[j].t1 < e.t0 - 0.6) continue;
+          const double fo = evs[j].f > 0 ? evs[j].f : midiFreq(evs[j].midi, mp_.a4());
+          for (int h = 1; h <= 16; ++h) {
+            const double fh = h * fo * std::sqrt(1 + B * h * h);
+            if (fh > 3600) break;
+            for (size_t k = 0; k < parts.size(); ++k) if (std::fabs(1200 * std::log2(parts[k] / fh)) < 60) sharedOn[k].push_back(evs[j].t0);
           }
-          en += re * re + im * im;
         }
-        tt.push_back((s + L / 2) / fsd);
-        db.push_back(10 * std::log10(en + 1e-12));
-      }
-      const int M = (int)db.size();
-      if (M < 6) continue;
+      partialTracks(parts, e.t0 - 0.5, e.t1 + 0.45, tt, en);
+      const int M = (int)tt.size(), d = 3; // narastanie na 3 krokach (35 ms)
+      if (M < 12) { out.push_back(e); continue; }
+      // alikwoty użyteczne w chwili t: bez innych nut zaczynających się w [t-0,12; t+0,12]
+      auto usable = [&](double t, std::vector<int>& u) {
+        u.clear();
+        for (size_t k = 0; k < parts.size(); ++k) {
+          bool bad = false;
+          for (double o : sharedOn[k]) if (std::fabs(o - t) < 0.12) { bad = true; break; }
+          if (!bad) u.push_back((int)k);
+        }
+      };
+      auto dbAt = [&](const std::vector<int>& u, int i) {
+        i = std::max(0, std::min(M - 1, i));
+        double x = 0;
+        for (int k : u) x += en[k][i];
+        return 10 * std::log10(x + 1e-12);
+      };
+      std::vector<int> all, u;
+      for (size_t k = 0; k < parts.size(); ++k) all.push_back((int)k);
       double peak = -1e9;
-      for (int i = 0; i < M; ++i) if (tt[i] >= e.t0 - 0.1 && tt[i] <= e.t1) peak = std::max(peak, db[i]);
-      // początek: największe narastanie (w ~70 ms) w [t0-0,45; t0+0,12], które dochodzi blisko poziomu nuty
+      for (int i = 0; i < M; ++i) if (tt[i] >= e.t0 - 0.1 && tt[i] <= e.t1) peak = std::max(peak, dbAt(all, i));
+      // początek
       int bi = -1; double br = 0;
-      for (int i = 1; i + 2 < M; ++i) {
-        if (tt[i] < e.t0 - 0.45 || tt[i] > e.t0 + 0.12) continue;
-        const double rise = db[i + 2] - db[i - 1];
-        if (rise >= 9 && db[i + 2] >= peak - 12 && rise > br + 0.5) { br = rise; bi = i; }
+      for (int i = 1; i + d < M; ++i) {
+        if (tt[i] < e.t0 - cfg_.segBack || tt[i] > e.t0 + 0.15) continue;
+        usable(tt[i] + cfg_.segOffset, u);
+        if (u.empty()) u = all;
+        const double r = dbAt(u, i + d) - dbAt(u, i - 1);
+        if (r >= cfg_.segRise && dbAt(all, i + d) >= peak - 14 && r > br + 0.3) { br = r; bi = i; }
       }
-      // przesuwamy tylko przy wyraźnej pomyłce: uderzenia z detektora są dokładne, jeśli należą do tej nuty
-      if (bi >= 0 && std::fabs(tt[bi] - e.t0) > 0.08) e.t0 = std::max(0.0, tt[bi] - 0.5 * hop / fsd);
-      // koniec: najstromszy spadek (w ~70 ms) w [t1-0,4; t1+0,4]
-      int ei = -1; double bd = 0;
-      for (int i = 1; i + 2 < M; ++i) {
+      if (bi >= 0 && std::fabs(tt[bi] + cfg_.segOffset - e.t0) > cfg_.segMove) e.t0 = std::max(0.0, tt[bi] + cfg_.segOffset);
+      // ponowne szarpnięcia: skok energii w alikwotach, których nie dzieli żadna nuta zaczynająca się w tej chwili
+      if (cfg_.resplit) {
+        int last = -1000;
+        std::vector<double> rs(M, 0.0);
+        for (int i = 1; i + d < M; ++i) {
+          usable(tt[i] + cfg_.segOffset, u);
+          if (u.empty()) continue;
+          double pre = -1e9;
+          for (int q = std::max(0, i - 6); q <= i - 1; ++q) pre = std::max(pre, dbAt(u, q));
+          rs[i] = std::min(dbAt(u, i + d) - dbAt(u, i - 1), dbAt(u, i + d) - pre);
+        }
+        for (int i = 2; i + d + 1 < M; ++i) {
+          const double ts = tt[i] + cfg_.segOffset;
+          if (ts < e.t0 + 0.15 || tt[i] > e.t1 - 0.12) continue;
+          if (rs[i] < cfg_.splitDb || rs[i - 1] > rs[i] || rs[i + 1] > rs[i] || i - last < 8) continue;
+          if (dbAt(all, i + d) < peak - 15) continue;
+          NoteEvent2 a = e; a.t1 = ts;
+          if (a.t1 - a.t0 >= 0.08) out.push_back(a);
+          e.t0 = ts;
+          last = i;
+        }
+      }
+      // koniec: najstromszy spadek w [t1-0,4; t1+0,4], tylko wyraźny
+      int ki = -1; double bd = 0;
+      for (int i = 1; i + d < M; ++i) {
         if (tt[i] < e.t1 - 0.4 || tt[i] > e.t1 + 0.4 || tt[i] < e.t0 + 0.08) continue;
-        const double drop = db[i - 1] - db[i + 2];
-        if (drop >= 10 && drop > bd) { bd = drop; ei = i; }
+        const double drop = dbAt(all, i - 1) - dbAt(all, i + d);
+        if (drop >= 10 && drop > bd) { bd = drop; ki = i; }
       }
-      if (ei >= 0) e.t1 = tt[ei] + 0.5 * hop / fsd;
+      if (ki >= 0) e.t1 = tt[ki] + 1.5 * hopT;
       if (e.t1 < e.t0 + 0.08) e.t1 = e.t0 + 0.08;
+      out.push_back(e);
     }
+    std::sort(out.begin(), out.end(), [](const NoteEvent2& a, const NoteEvent2& b) { return a.t0 < b.t0; });
+    evs.swap(out);
   }
 
   // Czułość podtrzymania. Nuta, która już brzmi, ale w tej ramce nie przeszła zwykłych progów (zanikła pod nowszymi dźwiękami,
