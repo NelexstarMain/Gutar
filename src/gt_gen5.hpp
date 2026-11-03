@@ -156,7 +156,7 @@ public:
       }
       finish(T - 1);
     }
-    std::sort(out.begin(), out.end(), [](const NoteEvent2& a, const NoteEvent2& b) { return a.t0 < b.t0 || (a.t0 == b.t0 && a.midi < b.midi); });
+    std::sort(out.begin(), out.end(), [](const NoteEvent2& a, const NoteEvent2& b) { return a.t0 < b.t0 || (a.t0 == b.t0 && (a.midi < b.midi || (a.midi == b.midi && a.t1 < b.t1))); });
   }
 };
 

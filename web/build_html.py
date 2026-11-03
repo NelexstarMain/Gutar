@@ -15,7 +15,7 @@ b64 = base64.b64encode(wasm).decode()
 asm_path = os.path.join(root, 'build', 'gt_engine.asm.js')
 asm = open(asm_path, encoding='utf-8').read() if os.path.exists(asm_path) else None
 
-order = ['gt_dsp.hpp', 'gt_spectrum.hpp', 'gt_model.hpp', 'gt_maskmodel.hpp', 'gt_mask.hpp', 'gt_pitch.hpp', 'gt_chords.hpp', 'gt_tracker.hpp', 'gt_engine.hpp',
+order = ['gt_dsp.hpp', 'gt_spectrum.hpp', 'gt_model.hpp', 'gt_maskmodel.hpp', 'gt_mask.hpp', 'gt_hcqt.hpp', 'gt_gen5model.hpp', 'gt_gen5.hpp', 'gt_pitch.hpp', 'gt_chords.hpp', 'gt_tracker.hpp', 'gt_engine.hpp',
          'gt_fingering.hpp', 'gt_hand.hpp', 'gt_export.hpp', 'gt_synth.hpp', 'wasm_api.cpp']
 sources = {'files': [{'name': n, 'code': rd('src', n)} for n in order]}
 src_json = json.dumps(sources, ensure_ascii=False).replace('</', '<\\/')

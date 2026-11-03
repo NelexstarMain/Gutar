@@ -325,7 +325,7 @@ public:
       e.midi = kv.first; e.t0 = kv.second.t0; e.t1 = std::max(t, kv.second.t0 + 0.05); e.vel = kv.second.vel;
       ev.push_back(e);
     }
-    std::sort(ev.begin(), ev.end(), [](const NoteEvent2& a, const NoteEvent2& b) { return a.t0 < b.t0 || (a.t0 == b.t0 && a.midi < b.midi); });
+    std::sort(ev.begin(), ev.end(), [](const NoteEvent2& a, const NoteEvent2& b) { return a.t0 < b.t0 || (a.t0 == b.t0 && (a.midi < b.midi || (a.midi == b.midi && a.t1 < b.t1))); });
     return ev;
   }
 
@@ -666,7 +666,7 @@ private:
   void refineEvents() {
     const double fsd = fsd_, B = 2.5e-4, minF = 35.0 * fsd / 1024, hopT = 128 / fsd;
     auto& evs = tracker_.events;
-    std::sort(evs.begin(), evs.end(), [](const NoteEvent2& a, const NoteEvent2& b) { return a.t0 < b.t0 || (a.t0 == b.t0 && a.midi < b.midi); });
+    std::sort(evs.begin(), evs.end(), [](const NoteEvent2& a, const NoteEvent2& b) { return a.t0 < b.t0 || (a.t0 == b.t0 && (a.midi < b.midi || (a.midi == b.midi && a.t1 < b.t1))); });
     std::vector<NoteEvent2> out;
     std::vector<double> tt;
     std::vector<std::vector<double>> en;
@@ -757,7 +757,19 @@ private:
       if (e.t1 < e.t0 + 0.08) e.t1 = e.t0 + 0.08;
       out.push_back(e);
     }
-    std::sort(out.begin(), out.end(), [](const NoteEvent2& a, const NoteEvent2& b) { return a.t0 < b.t0 || (a.t0 == b.t0 && a.midi < b.midi); });
+    // duplikaty: ta sama wysokość z początkami bliżej niż 30 ms (np. dwa kawałki przesunięte do tego samego ataku) -> jedna nuta
+    std::sort(out.begin(), out.end(), [](const NoteEvent2& a, const NoteEvent2& b) { return a.midi < b.midi || (a.midi == b.midi && a.t0 < b.t0); });
+    std::vector<NoteEvent2> ded;
+    for (const auto& e : out) {
+      if (!ded.empty() && ded.back().midi == e.midi && e.t0 - ded.back().t0 < 0.03) {
+        NoteEvent2& d = ded.back();
+        d.t1 = std::max(d.t1, e.t1); d.vel = std::max(d.vel, e.vel); d.conf = std::max(d.conf, e.conf);
+        continue;
+      }
+      ded.push_back(e);
+    }
+    out.swap(ded);
+    std::sort(out.begin(), out.end(), [](const NoteEvent2& a, const NoteEvent2& b) { return a.t0 < b.t0 || (a.t0 == b.t0 && (a.midi < b.midi || (a.midi == b.midi && a.t1 < b.t1))); });
     evs.swap(out);
   }
 
@@ -859,7 +871,7 @@ private:
   //  3. usuwanie: nuta krótsza niż ctxShort bez ataku we własnych alikwotach to przebłysk, nie zagrany dźwięk.
   void contextRepair() {
     auto& ev = tracker_.events;
-    auto byT = [](const NoteEvent2& a, const NoteEvent2& b) { return a.t0 < b.t0 || (a.t0 == b.t0 && a.midi < b.midi); };
+    auto byT = [](const NoteEvent2& a, const NoteEvent2& b) { return a.t0 < b.t0 || (a.t0 == b.t0 && (a.midi < b.midi || (a.midi == b.midi && a.t1 < b.t1))); };
     std::sort(ev.begin(), ev.end(), byT);
     // 3. usuwanie przebłysków
     if (cfg_.ctxPrune) {
@@ -962,7 +974,7 @@ private:
   // akordów w ramkach i historię akordów.
   void chordsFromNotes() {
     std::vector<NoteEvent2> ev = tracker_.events;
-    std::sort(ev.begin(), ev.end(), [](const NoteEvent2& a, const NoteEvent2& b) { return a.t0 < b.t0 || (a.t0 == b.t0 && a.midi < b.midi); });
+    std::sort(ev.begin(), ev.end(), [](const NoteEvent2& a, const NoteEvent2& b) { return a.t0 < b.t0 || (a.t0 == b.t0 && (a.midi < b.midi || (a.midi == b.midi && a.t1 < b.t1))); });
     struct Seg { double a, b; std::string name; float score; std::string alt[2]; int nAlt; int pcs; int freshPcs; int nFresh; };
     std::vector<Seg> segs;
     // uderzenia: kolejne początki bliżej niż chGroup od poprzedniego (łańcuch), całość najwyżej 0,25 s
