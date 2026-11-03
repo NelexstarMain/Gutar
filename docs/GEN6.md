@@ -147,6 +147,7 @@ python3 tools/gen6/kaggle/push.py trening         # etap B, gdy A skończy się 
 kaggle kernels output <użytkownik>/gutar-gen6-trening -p wynik/   # best.pt, log.jsonl, test.json, train.log
 ```
 Kod jest wklejany do skryptu notatnika (tar.gz w base64), więc Kaggle nie potrzebuje dostępu do repozytorium.
-Notatnik na koncie bez weryfikacji telefonem nie ma internetu, dlatego wejście etapu A to prywatny zbiór danych
-`<użytkownik>/gutar-gen6-wejscie`: `korpus.zip` (wynik `fetch_classical.py`: `manifest.csv` + `midi/`), `annotation.zip`
-i `audio_mono-mic.zip` z GuitarSet (`kaggle datasets create -p katalog`). `prepare.py --input` rozpakowuje je sam.
+Notatnik na koncie bez weryfikacji telefonem nie ma internetu, dlatego wejścia są prywatnymi zbiorami danych:
+`<użytkownik>/gutar-gen6-korpus` dla etapu A (`korpus.zip` = wynik `fetch_classical.py`: `manifest.csv` + `midi/`) oraz
+`<użytkownik>/gutar-guitarset-czesci` dla etapu B (`annotation.zip`, `audio_00.zip` … `audio_05.zip`, po graczu; jednego pliku
+626 MB Kaggle nie przetworzył). Etap B liczy cechy GuitarSet sam (ok. 10 min), `prepare.py --input` rozpakowuje zipy.

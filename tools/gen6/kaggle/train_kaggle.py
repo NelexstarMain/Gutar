@@ -36,6 +36,7 @@ def main():
     from tools.gen6.model import Gen6
 
     data = a.data or find_data()
+    extra_gs = None
     os.makedirs(a.out, exist_ok=True)
     logf = open(os.path.join(a.out, 'train.log'), 'a')
 
@@ -43,12 +44,24 @@ def main():
         s = '[%6.0f s] ' % (time.time() - T0) + ' '.join(str(x) for x in m)
         print(s, flush=True); logf.write(s + '\n'); logf.flush()
 
+    # GuitarSet dołączony do etapu B, a nie do A: cechy liczone tutaj (ok. 10 min na CPU)
+    if not os.path.exists(os.path.join(data, 'manifest_guitarset.jsonl')) and glob.glob('/kaggle/input/**/*.jams', recursive=True) + \
+            glob.glob('/kaggle/input/**/annotation.zip', recursive=True):
+        import subprocess
+        gsd = os.path.join(os.path.dirname(a.out), 'dane_gs')
+        log('liczę cechy GuitarSet do', gsd)
+        subprocess.run([sys.executable, os.path.join(ROOT, 'tools/gen6/kaggle/prepare.py'), '--no-classical', '--env', '0',
+                        '--out', gsd, '--work', '/tmp/g6gs'], check=True)
+        if os.path.exists(os.path.join(gsd, 'manifest_guitarset.jsonl')):
+            extra_gs = os.path.join(gsd, 'manifest_guitarset.jsonl')
     d = json.load(open(a.config))
     srcs = []
     for s in d['sources']:
         s = dict(s)
         if s.get('manifest'):
             s['manifest'] = s['manifest'].replace('{DANE}', data)
+            if s['name'] == 'GuitarSet' and extra_gs:
+                s['manifest'] = extra_gs
             if not os.path.exists(s['manifest']):
                 log('pomijam źródło %s: brak %s' % (s['name'], s['manifest'])); continue
         srcs.append(s)

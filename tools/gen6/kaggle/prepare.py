@@ -101,6 +101,7 @@ def main():
     ap.add_argument('--limit', type=int, default=0, help='najwyżej N utworów na zbiór (próba)')
     ap.add_argument('--env', type=int, default=900, help='nagrań środowisk gitarowych gen 4')
     ap.add_argument('--no-guitarset', action='store_true')
+    ap.add_argument('--no-classical', action='store_true', help='bez korpusu i nagrań klasycznych (np. sam GuitarSet)')
     ap.add_argument('--jobs', type=int, default=os.cpu_count() or 4)
     ap.add_argument('--input', default='/kaggle/input', help='dane wejściowe bez internetu: korpus.zip, annotation.zip, '
                     'audio_mono-mic.zip (albo rozpakowane katalogi) gdziekolwiek pod tym katalogiem')
@@ -110,7 +111,7 @@ def main():
     use_input(a.input, W)
 
     # 1. korpus MIDI
-    if not os.path.exists(os.path.join(W, 'korpus', 'manifest.csv')):
+    if not a.no_classical and not os.path.exists(os.path.join(W, 'korpus', 'manifest.csv')):
         try:
             import music21  # noqa: F401
         except ImportError:
@@ -124,7 +125,7 @@ def main():
     seed = 1
     for split in ('train', 'validation', 'test'):
         d = os.path.join(W, split)
-        if not os.path.exists(os.path.join(d, 'index.csv')):
+        if not a.no_classical and not os.path.exists(os.path.join(d, 'index.csv')):
             v, c = (a.versions, a.clips) if split == 'train' else (a.val_versions, 1)
             cmd = ['./build/gen_classical', os.path.join(W, 'korpus', 'manifest.csv'), os.path.join(W, 'korpus'), d, '--split', split,
                    '--seed', str(seed), '--versions', str(v), '--clips', str(c), '--len', *a.len, '--jobs', str(a.jobs), '--guitar', a.guitar]
@@ -147,7 +148,11 @@ def main():
         os.makedirs(gs, exist_ok=True)
         for name, sub in (('annotation.zip', 'annotation'), ('audio_mono-mic.zip', 'audio_mono-mic')):
             if not os.path.isdir(os.path.join(gs, sub)) or not os.listdir(os.path.join(gs, sub)):
-                z = download(GS_URL % name, os.path.join(gs, name))
+                try:
+                    z = download(GS_URL % name, os.path.join(gs, name))
+                except OSError as e:  # brak internetu i brak GuitarSet na wejściu: uczenie bez niego
+                    log('GuitarSet niedostępny (%s), pomijam' % e)
+                    break
                 os.makedirs(os.path.join(gs, sub), exist_ok=True)
                 with zipfile.ZipFile(z) as zf:
                     for m in zf.infolist():

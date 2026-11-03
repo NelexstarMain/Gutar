@@ -8,8 +8,8 @@
 
 Kod (src/, tools/, bez danych) jest wklejany do skryptu jako tar.gz w base64, więc notatnik nie potrzebuje dostępu do GitHuba.
 Etap B czyta wynik etapu A (kernel_sources), więc wysyłaj go dopiero, gdy A skończy się powodzeniem.
-Etap A dostaje zbiór danych <użytkownik>/gutar-gen6-wejscie (korpus MIDI z fetch_classical.py zapakowany jako korpus.zip
-oraz annotation.zip i audio_mono-mic.zip z GuitarSet), bo notatnik bez weryfikacji telefonu nie ma internetu.
+Etap A dostaje zbiór danych <użytkownik>/gutar-gen6-korpus (korpus MIDI z fetch_classical.py zapakowany jako korpus.zip),
+etap B <użytkownik>/gutar-guitarset-czesci (annotation.zip i audio_00..05.zip; jeden plik 626 MB Kaggle nie przetwarzał), bo notatnik bez weryfikacji telefonu nie ma internetu.
 """
 import argparse, base64, io, json, os, subprocess, sys, tarfile, tempfile
 
@@ -24,7 +24,7 @@ dst = '/tmp/Gutar'
 os.makedirs(dst, exist_ok=True)
 tarfile.open(fileobj=io.BytesIO(base64.b64decode(CODE)), mode='r:gz').extractall(dst)
 os.chdir(dst)
-subprocess.run('nvidia-smi || true; nproc; free -g; df -h /tmp /kaggle/working', shell=True)
+subprocess.run('nvidia-smi || true; nproc; free -g; df -h /tmp /kaggle/working; find /kaggle/input -maxdepth 3 | head -50', shell=True)
 subprocess.run([sys.executable, '-u'] + %(cmd)r, check=True)
 '''
 
@@ -47,6 +47,8 @@ def main():
     ap.add_argument('--user', default=os.environ.get('KAGGLE_USERNAME'))
     ap.add_argument('--args', default='')
     ap.add_argument('--accelerator', default='NvidiaTeslaT4')
+    ap.add_argument('--korpus', default='gutar-gen6-korpus', help='zbiór danych z korpus.zip (etap A)')
+    ap.add_argument('--guitarset', default='gutar-guitarset-czesci', help='zbiór danych z GuitarSet (etap B liczy jego cechy); pusty = bez')
     a = ap.parse_args()
     if not a.user:
         out = subprocess.run(['kaggle', 'config', 'view'], capture_output=True, text=True).stdout
@@ -61,7 +63,7 @@ def main():
     meta = {'id': '%s/%s' % (a.user, SLUG[a.stage]), 'title': TITLE[a.stage], 'code_file': 'run.py', 'language': 'python',
             'kernel_type': 'script', 'is_private': True, 'enable_gpu': a.stage == 'trening', 'enable_tpu': False,
             'enable_internet': True,
-            'dataset_sources': ['%s/gutar-gen6-wejscie' % a.user] if a.stage == 'dane' else [], 'competition_sources': [],
+            'dataset_sources': ['%s/%s' % (a.user, ds) for ds in (a.korpus if a.stage == 'dane' else a.guitarset).split(',') if ds], 'competition_sources': [],
             'kernel_sources': ['%s/%s' % (a.user, SLUG['dane'])] if a.stage == 'trening' else []}
     json.dump(meta, open(os.path.join(d, 'kernel-metadata.json'), 'w'), indent=1)
     print('kod: %.0f kB, katalog %s' % (len(code) / 1024, d))
