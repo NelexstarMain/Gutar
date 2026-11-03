@@ -4,6 +4,7 @@
   export KAGGLE_API_TOKEN=...            (albo ~/.kaggle/kaggle.json; klucza nie zapisujemy w repozytorium)
   python3 tools/gen6/kaggle/push.py dane      [--user NAZWA] [--args "--versions 2 --clips 1"]
   python3 tools/gen6/kaggle/push.py trening   [--user NAZWA] [--args "--hours 11"]
+  python3 tools/gen6/kaggle/push.py dalej     (druga sesja 12 h: dalsze uczenie od last.pt z wyniku 'trening', nowy cykl lr)
   kaggle kernels status NAZWA/gutar-gen6-dane ; kaggle kernels output NAZWA/gutar-gen6-trening -p wynik/
 
 Kod (src/, tools/, bez danych) jest wklejany do skryptu jako tar.gz w base64, więc notatnik nie potrzebuje dostępu do GitHuba.
@@ -14,8 +15,8 @@ etap B <użytkownik>/gutar-guitarset-czesci (annotation.zip i audio_00..05.zip; 
 import argparse, base64, io, json, os, subprocess, sys, tarfile, tempfile
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
-SLUG = {'dane': 'gutar-gen6-dane', 'trening': 'gutar-gen6-trening'}
-TITLE = {'dane': 'Gutar gen6 dane', 'trening': 'Gutar gen6 trening'}
+SLUG = {'dane': 'gutar-gen6-dane', 'trening': 'gutar-gen6-trening', 'dalej': 'gutar-gen6-trening-dalej'}
+TITLE = {'dane': 'Gutar gen6 dane', 'trening': 'Gutar gen6 trening', 'dalej': 'Gutar gen6 trening dalej'}
 
 STUB = r'''# Gitara Słuchacz, generacja 6: %(what)s (wygenerowane przez tools/gen6/kaggle/push.py)
 import base64, io, os, subprocess, sys, tarfile
@@ -43,7 +44,7 @@ def pack():
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('stage', choices=['dane', 'trening'])
+    ap.add_argument('stage', choices=['dane', 'trening', 'dalej'])
     ap.add_argument('--user', default=os.environ.get('KAGGLE_USERNAME'))
     ap.add_argument('--args', default='')
     ap.add_argument('--accelerator', default='NvidiaTeslaT4')
@@ -56,19 +57,22 @@ def main():
     if not a.user:
         sys.exit('podaj --user (nazwa konta Kaggle)')
     script = 'tools/gen6/kaggle/prepare.py' if a.stage == 'dane' else 'tools/gen6/kaggle/train_kaggle.py'
+    if a.stage == 'dalej':  # druga sesja: dalsze uczenie od last.pt z wyniku notatnika 'trening'
+        a.args = ('--continue-from auto ' + a.args).strip()
     cmd = [script] + a.args.split()
     d = tempfile.mkdtemp(prefix='kaggle_' + a.stage + '_')
     code = pack()
     open(os.path.join(d, 'run.py'), 'w').write(STUB % {'what': a.stage, 'code': code, 'cmd': cmd})
     meta = {'id': '%s/%s' % (a.user, SLUG[a.stage]), 'title': TITLE[a.stage], 'code_file': 'run.py', 'language': 'python',
-            'kernel_type': 'script', 'is_private': True, 'enable_gpu': a.stage == 'trening', 'enable_tpu': False,
+            'kernel_type': 'script', 'is_private': True, 'enable_gpu': a.stage != 'dane', 'enable_tpu': False,
             'enable_internet': True,
             'dataset_sources': ['%s/%s' % (a.user, ds) for ds in (a.korpus if a.stage == 'dane' else a.guitarset).split(',') if ds], 'competition_sources': [],
-            'kernel_sources': ['%s/%s' % (a.user, SLUG['dane'])] if a.stage == 'trening' else []}
+            'kernel_sources': {'dane': [], 'trening': ['%s/%s' % (a.user, SLUG['dane'])],
+                               'dalej': ['%s/%s' % (a.user, SLUG['dane']), '%s/%s' % (a.user, SLUG['trening'])]}[a.stage]}
     json.dump(meta, open(os.path.join(d, 'kernel-metadata.json'), 'w'), indent=1)
     print('kod: %.0f kB, katalog %s' % (len(code) / 1024, d))
     push = ['kaggle', 'kernels', 'push', '-p', d]
-    if a.stage == 'trening':
+    if a.stage != 'dane':
         push += ['--accelerator', a.accelerator]
     subprocess.run(push, check=True)
 

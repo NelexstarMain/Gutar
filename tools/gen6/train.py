@@ -57,17 +57,20 @@ def pick_device(name='auto'):
 class Prefetcher:
     """Paczki (losowanie wycinków + augmentacja w numpy) przygotowywane w wątku w tle, żeby GPU nie czekało na CPU."""
 
-    def __init__(self, ds, cfg, rng, n):
+    def __init__(self, ds, cfg, rng, n, threads=3):
         import queue, threading
         self.q, self.stop = queue.Queue(maxsize=max(1, n)), False
-        self.rng = np.random.default_rng(rng.integers(1 << 62))  # osobny strumień losowy wątku
+        self.ts = []
+        for k in range(max(1, threads)):  # kilka wątków: numpy zwalnia GIL przy kopiowaniu i FFT-free operacjach na tablicach
+            r = np.random.default_rng(rng.integers(1 << 62))  # osobny strumień losowy każdego wątku
 
-        def work():
-            while not self.stop:
-                x, tg, avail, valid = ds.batch(cfg.train.batch, cfg.train.crop_frames, self.rng)
-                self.q.put((augment(x, cfg.train.augment, self.rng), tg, avail, valid))
-        self.t = threading.Thread(target=work, daemon=True)
-        self.t.start()
+            def work(r=r):
+                while not self.stop:
+                    x, tg, avail, valid = ds.batch(cfg.train.batch, cfg.train.crop_frames, r)
+                    self.q.put((augment(x, cfg.train.augment, r), tg, avail, valid))
+            t = threading.Thread(target=work, daemon=True)
+            t.start()
+            self.ts.append(t)
 
     def get(self):
         return self.q.get()
@@ -96,7 +99,8 @@ def val_subset(va, n, seed=0):
     return out
 
 
-def train(cfg: Config, out, resume=False, examples=None, log=print, jobs=None):
+def train(cfg: Config, out, resume=False, examples=None, log=print, jobs=None, extend=0, extend_lr=None):
+    """extend > 0 (z resume): dalsze uczenie o tyle epok z nowym cyklem lr (ciepły restart, szczyt extend_lr albo cfg.train.lr)."""
     os.makedirs(out, exist_ok=True)
     torch.manual_seed(cfg.train.seed)
     rng = np.random.default_rng(cfg.train.seed)
@@ -120,14 +124,22 @@ def train(cfg: Config, out, resume=False, examples=None, log=print, jobs=None):
     epochs = cfg.train.epochs
     total = epochs * cfg.train.steps_per_epoch
     ep0, step, best, since = 0, 0, -1e9, 0
+    s0, ep_s0 = 0, 0  # krok i epoka, od których liczy się bieżący cykl lr
     last = os.path.join(out, 'last.pt')
     if resume and os.path.exists(last):
         st = torch.load(last, weights_only=False, map_location=dev)
         net.load_state_dict(st['net']); opt.load_state_dict(st['opt'])
         ep0, step, best, since = st['epoch'] + 1, st['step'], st['best'], st['since']
-        epochs = st.get('epochs', epochs); total = epochs * cfg.train.steps_per_epoch
+        epochs = st.get('epochs', epochs); s0, ep_s0 = st.get('s0', 0), st.get('ep_s0', 0)
+        total = s0 + (epochs - ep_s0) * cfg.train.steps_per_epoch
         rng = st['rng']; ds.rng = rng; torch.set_rng_state(st['trng'])
         log('wznowiono od epoki %d' % ep0)
+        if extend:
+            epochs, s0, ep_s0, since = ep0 + extend, step, ep0, 0
+            total = s0 + extend * cfg.train.steps_per_epoch
+            if extend_lr:
+                cfg.train.lr = extend_lr
+            log('dalsze uczenie: %d epok, nowy cykl lr od %.2g' % (extend, cfg.train.lr))
     cfg.save(os.path.join(out, 'config.json'))
     pf = Prefetcher(ds, cfg, rng, cfg.train.prefetch) if cfg.train.prefetch else None
     use_amp = bool(cfg.train.amp and dev.type == 'cuda')
@@ -139,7 +151,7 @@ def train(cfg: Config, out, resume=False, examples=None, log=print, jobs=None):
         acc = {}
         for _ in range(cfg.train.steps_per_epoch):
             for g in opt.param_groups:
-                g['lr'] = lr_at(step, total, cfg.train)
+                g['lr'] = lr_at(step - s0, total - s0, cfg.train)
             if pf:
                 x, tg, avail, valid = pf.get()
             else:
@@ -190,7 +202,7 @@ def train(cfg: Config, out, resume=False, examples=None, log=print, jobs=None):
             fit = ep0 + max(1, int(cfg.train.time_budget_sec // max(per, 1e-3)))
             if fit < epochs:
                 log('budżet %.0f s, epoka %.0f s -> %d epok zamiast %d' % (cfg.train.time_budget_sec, per, fit, epochs))
-                epochs = fit; total = epochs * cfg.train.steps_per_epoch
+                epochs = fit; total = s0 + (epochs - ep_s0) * cfg.train.steps_per_epoch
         rec['epochs'] = epochs
         improved = not math.isnan(score) and score > best
         if improved:
@@ -199,7 +211,7 @@ def train(cfg: Config, out, resume=False, examples=None, log=print, jobs=None):
         else:
             since += 1
         torch.save({'net': net.state_dict(), 'opt': opt.state_dict(), 'epoch': ep, 'step': step, 'best': best, 'since': since,
-                    'epochs': epochs, 'rng': rng, 'trng': torch.get_rng_state(), 'config': cfg.to_dict()}, last)
+                    'epochs': epochs, 's0': s0, 'ep_s0': ep_s0, 'rng': rng, 'trng': torch.get_rng_state(), 'config': cfg.to_dict()}, last)
         with open(os.path.join(out, 'log.jsonl'), 'a') as f:
             f.write(json.dumps(rec, ensure_ascii=False, default=float) + '\n')
         val_s = ''

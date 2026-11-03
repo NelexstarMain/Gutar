@@ -151,3 +151,9 @@ Notatnik na koncie bez weryfikacji telefonem nie ma internetu, dlatego wejścia 
 `<użytkownik>/gutar-gen6-korpus` dla etapu A (`korpus.zip` = wynik `fetch_classical.py`: `manifest.csv` + `midi/`) oraz
 `<użytkownik>/gutar-guitarset-czesci` dla etapu B (`annotation.zip`, `audio_00.zip` … `audio_05.zip`, po graczu; jednego pliku
 626 MB Kaggle nie przetworzył). Etap B liczy cechy GuitarSet sam (ok. 10 min), `prepare.py --input` rozpakowuje zipy.
+
+**Druga sesja (dalsze uczenie).** Jedna sesja Kaggle trwa najwyżej 12 h, więc przy tygodniowym limicie ok. 30 h GPU uczenie
+można przedłużyć: `python3 tools/gen6/kaggle/push.py dalej` (notatnik `gutar-gen6-trening-dalej`, wejścia: dane z etapu A i wynik
+notatnika `gutar-gen6-trening`). Kopiuje `run/last.pt`, `best.pt` i dziennik, bierze cechy GuitarSet z poprzedniej sesji
+i uczy dalej do 40 epok z nowym cyklem lr (ciepły restart, szczyt 4e-4; `--extend`, `--extend-lr`); budżet czasu znowu przycina
+liczbę epok. `best.pt` zmienia się tylko, gdy walidacja przebije najlepszy wynik z pierwszej sesji.
