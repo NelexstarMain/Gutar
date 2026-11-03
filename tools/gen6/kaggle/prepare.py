@@ -57,6 +57,38 @@ def feat_job(args):
         return dst, 0, repr(e)
 
 
+def use_input(inp, W):
+    """Notatnik Kaggle bez internetu: korpus i GuitarSet z dołączonego zbioru danych (zip albo rozpakowane)."""
+    if not os.path.isdir(inp):
+        return
+    def unzip(z, dst):
+        os.makedirs(dst, exist_ok=True)
+        log('rozpakowuję', z, '->', dst)
+        with zipfile.ZipFile(z) as zf:
+            zf.extractall(dst)
+    def flat(dst, pattern):  # pliki pasujące do wzorca z dowolnej głębokości -> dst (dowiązania)
+        os.makedirs(dst, exist_ok=True)
+        for f in glob.glob(os.path.join(W, '_in', '**', pattern), recursive=True) + glob.glob(os.path.join(inp, '**', pattern), recursive=True):
+            t = os.path.join(dst, os.path.basename(f))
+            if not os.path.exists(t):
+                os.symlink(os.path.abspath(f), t)
+    for z in glob.glob(os.path.join(inp, '**', '*.zip'), recursive=True):
+        unzip(z, os.path.join(W, '_in', os.path.basename(z)[:-4]))
+    kor = os.path.join(W, 'korpus')
+    if not os.path.exists(os.path.join(kor, 'manifest.csv')):
+        hits = [h for h in glob.glob(os.path.join(W, '_in', '**', 'manifest.csv'), recursive=True) +
+                glob.glob(os.path.join(inp, '**', 'manifest.csv'), recursive=True) if os.path.isdir(os.path.join(os.path.dirname(h), 'midi'))]
+        if hits:
+            os.makedirs(W, exist_ok=True)
+            if os.path.lexists(kor):
+                os.remove(kor)
+            os.symlink(os.path.dirname(os.path.abspath(hits[0])), kor)
+            log('korpus z wejścia:', hits[0])
+    gs = os.path.join(W, 'guitarset')
+    flat(os.path.join(gs, 'annotation'), '*.jams')
+    flat(os.path.join(gs, 'audio_mono-mic'), '*_mic.wav')
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--out', default='/kaggle/working/dane')
@@ -70,9 +102,12 @@ def main():
     ap.add_argument('--env', type=int, default=900, help='nagrań środowisk gitarowych gen 4')
     ap.add_argument('--no-guitarset', action='store_true')
     ap.add_argument('--jobs', type=int, default=os.cpu_count() or 4)
+    ap.add_argument('--input', default='/kaggle/input', help='dane wejściowe bez internetu: korpus.zip, annotation.zip, '
+                    'audio_mono-mic.zip (albo rozpakowane katalogi) gdziekolwiek pod tym katalogiem')
     a = ap.parse_args()
     W, O = a.work, a.out
     os.makedirs(W, exist_ok=True); os.makedirs(O, exist_ok=True); os.makedirs(os.path.join(ROOT, 'build'), exist_ok=True)
+    use_input(a.input, W)
 
     # 1. korpus MIDI
     if not os.path.exists(os.path.join(W, 'korpus', 'manifest.csv')):

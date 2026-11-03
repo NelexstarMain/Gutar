@@ -8,6 +8,8 @@
 
 Kod (src/, tools/, bez danych) jest wklejany do skryptu jako tar.gz w base64, więc notatnik nie potrzebuje dostępu do GitHuba.
 Etap B czyta wynik etapu A (kernel_sources), więc wysyłaj go dopiero, gdy A skończy się powodzeniem.
+Etap A dostaje zbiór danych <użytkownik>/gutar-gen6-wejscie (korpus MIDI z fetch_classical.py zapakowany jako korpus.zip
+oraz annotation.zip i audio_mono-mic.zip z GuitarSet), bo notatnik bez weryfikacji telefonu nie ma internetu.
 """
 import argparse, base64, io, json, os, subprocess, sys, tarfile, tempfile
 
@@ -58,7 +60,8 @@ def main():
     open(os.path.join(d, 'run.py'), 'w').write(STUB % {'what': a.stage, 'code': code, 'cmd': cmd})
     meta = {'id': '%s/%s' % (a.user, SLUG[a.stage]), 'title': TITLE[a.stage], 'code_file': 'run.py', 'language': 'python',
             'kernel_type': 'script', 'is_private': True, 'enable_gpu': a.stage == 'trening', 'enable_tpu': False,
-            'enable_internet': True, 'dataset_sources': [], 'competition_sources': [],
+            'enable_internet': True,
+            'dataset_sources': ['%s/gutar-gen6-wejscie' % a.user] if a.stage == 'dane' else [], 'competition_sources': [],
             'kernel_sources': ['%s/%s' % (a.user, SLUG['dane'])] if a.stage == 'trening' else []}
     json.dump(meta, open(os.path.join(d, 'kernel-metadata.json'), 'w'), indent=1)
     print('kod: %.0f kB, katalog %s' % (len(code) / 1024, d))
