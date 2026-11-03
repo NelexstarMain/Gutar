@@ -4,3 +4,5 @@ dist/artifact-page.html
 *.o
 __pycache__/
 *.pyc
+/gen6/
+/gen6_*/
