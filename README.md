@@ -138,6 +138,14 @@ współczesne modele transkrypcji (Onsets and Frames, Hawthorne i in. 2018; Basi
 Gen 5 działa przy analizie nagrania (plik, demo, ponowna analiza po zatrzymaniu mikrofonu); na żywo zostaje klasyczny detektor.
 Wykresy uczenia i porównanie generacji: artefakt „Gitara Słuchacz: pomiary”.
 
+### Generacja 6: architektura (bez wag)
+
+Nowa architektura pod nowe dane, w `tools/gen6/` (opis: [`docs/GEN6.md`](docs/GEN6.md)). Ten etap obejmuje tylko kod: modelu jeszcze nie uczono, a silnik nadal używa gen 5.
+* dane w dowolnym formacie są sprowadzane do jednego zapisu; adaptery: manifest JSONL, GuitarSet/JAMS, CSV/TSV, MIDI, korpusy, zrzuty silnika; maski etykiet, których źródło nie ma;
+* cechy co 23 ms (gen 5: 46 ms), dokładna zmiana próbkowania (gen 5 przy 48 kHz liczyła cechy przy 12 kHz);
+* sieć: bloki harmonicznych konwolucji, uwaga w czasie w obie strony i uwaga między wysokościami, 5 głowic (początek, brzmi, koniec, głośność, tabulatura);
+* jeden moduł ewaluacji dla wszystkich generacji (także dla JSON silnika C++): nuty, klatki, mapy, podtrzymanie, akordy, tabulatura, stroik, bootstrap; zgodny z mir_eval (testy).
+
 ### Generacja 4: losowe środowiska, model maski i model nut
 
 **Środowiska** (`tools/gen_env.cpp`). Każde nagranie losuje wszystko od nowa, żeby model nie mógł nauczyć się jednego szumu ani
