@@ -4,12 +4,14 @@ Rozpoznawanie nut, akordów i stroju gitary na żywo z mikrofonu albo z pliku au
 Cała analiza dźwięku jest napisana w **C++17** (`src/`), kompilowana do **WebAssembly** i osadzona
 w jednym pliku HTML. Ten plik działa jako artefakt i jako samodzielna aplikacja offline.
 
-* `dist/gitara-sluchacz.html`: gotowa aplikacja (jeden plik, ok. 4,4 MB, mikrofon działa po otwarciu z dysku)
+* `dist/gitara-sluchacz.html`: gotowa aplikacja (jeden plik, ok. 5 MB, mikrofon działa po otwarciu z dysku)
 * `dist/gt_engine.wasm`: sam silnik (ok. 400 KB)
 
 ## Co potrafi
 
 * wielogłosowe wykrywanie nut (grzebień alikwotów + kasowanie), z podwojeniami oktawowymi (E2+E3),
+* **generacja 5: sieć neuronowa na widmie** (przy analizie nagrania): konwolucyjna sieć z blokiem uwagi (attention) na harmonicznie
+  ułożonym widmie całego nagrania zwraca dla każdej klatki i półtonu p(brzmi) i p(zaczyna się), dekoder składa z tego nuty;
 * **wytrenowane modele (AI)**: przy analizie nagrania model maski ocenia, ile w każdym paśmie jest gitary, a ile otoczenia (szum, stuki,
   tony), a model nut (gen 4: zespół 4 sieci, uczony na losowych środowiskach, korpusie i prawdziwych nagraniach GuitarSet) ocenia każdą kandydującą wysokość w każdej klatce: czy to fala tej gitary, czy
   szum, odbicie albo alikwot innej struny; do tego **odszumianie**: widmo szumu tła liczone z wszystkich klatek nagrania,
@@ -101,6 +103,40 @@ akordy z partytury), skryptem `tools/guitarset_eval.py` z metrykami **mir_eval**
 | akompaniament: akord dur/moll (mir_eval majmin) | 34,0 % | 42,3 % | 46,6 % | **48,2 %** | 42,8 % |
 
 (Kolumna „bez modelu” zawiera już odszumianie; liczby bez modelu różnią się od poprzedniej wersji tego README o ±0,3 pkt.)
+
+### Generacja 5: sieć na widmie z uwagą
+
+Zamiast poprawiać decyzje klasycznego detektora (generacje 3–4: 32–44 ręcznie liczone cechy), generacja 5 uczy się wprost z widma, jak
+współczesne modele transkrypcji (Onsets and Frames, Hawthorne i in. 2018; Basic Pitch, Bittner i in. 2022).
+
+* **Wejście** (`src/gt_hcqt.hpp`): harmonicznie ułożone widmo (HCQT, Bittner i in. 2017) całego nagrania: 159 wysokości co 1/3 półtonu
+  (MIDI 36–88), klatki co 46 ms wyrównane z ramkami silnika, 9 kanałów: alikwoty 0,5×, 1×, 2×…5× z okna 372 ms i 1×–3× z okna 93 ms;
+  dB względem 99,5. percentyla nagrania (niezależne od poziomu).
+* **Sieć** (`src/gt_gen5.hpp`, wagi `src/gt_gen5model.hpp`, uczenie `tools/train_gen5.py`): 5 warstw konwolucji z połączeniami
+  resztkowymi (alikwoty i sąsiednie wysokości, kontekst ±4 klatki, warstwa z dylatacją 36 binów = oktawa niżej i wyżej), potem
+  **blok uwagi w czasie**: dla każdej wysokości klatka patrzy na ostatnią sekundę (22 klatki) tej samej wysokości, 2 głowy, wyuczona
+  premia za odległość, feed-forward; na końcu 2 wyjścia na półton: p(brzmi), p(zaczyna się). 37 tys. parametrów.
+* **Dekoder**: nuta zaczyna się w lokalnym maksimum p(zaczyna się) ≥ 0,5 (albo przy p(brzmi) ≥ 0,7 przez 2 klatki) i trwa, dopóki
+  p(brzmi) ≥ 0,5; nowy początek w trakcie nuty to ponowne szarpnięcie. Potem jak dotąd: docinanie początków krótkim oknem, akordy z nut.
+  Duplikaty (ta sama wysokość, początki bliżej niż 30 ms) są scalane.
+* **Uczenie**: PyTorch na CPU, 16 epok × 500 kroków (wycinki po 96 klatek), ok. 35 min dla samej konwolucji i 70 min z uwagą; dane jak
+  w gen 4 (środowiska, korpusy, GuitarSet 00–02; walidacja: funk gracza 02), wagi źródeł GuitarSet 0,5, reszta po 0,25. Zapis stanu
+  po każdej epoce (`--resume`). Inferencja w C++ zgodna z PyTorch do 1e-6.
+
+| zbiory kontrolne | gen 4 | gen 5, sama konwolucja | **gen 5 z uwagą** |
+|---|---:|---:|---:|
+| GuitarSet 03–05: nuty F1 (50 ms) | 62,5 % | 78,5 % | **79,5 %** |
+| … precyzja / czułość | 81,0 / 53,2 % | 81,3 / 77,3 % | **82,0 / 78,2 %** |
+| GuitarSet: nuty z początkiem i końcem | 26,9 % | 40,3 % | **40,9 %** |
+| GuitarSet: akompaniament / melodie | 52,1 / 73,0 % | 73,8 / 83,3 % | **75,6 / 83,4 %** |
+| GuitarSet, akompaniament: prima / dur-moll | 50,0 / 48,2 % | 53,8 / 58,4 % | **54,6 / 59,1 %** |
+| nowe środowiska: nuty / początki | 70,9 / 60,6 % | 76,6 / 81,2 % | **79,8 / 83,4 %** |
+| korpus kontrolny: akordy / nuty | 98,5 / 92,1 % | 99,7 / 93,9 % | **100 / 95,1 %** |
+| korpus: początki nut (50 ms) | 79,6 % | 87,5 % | **87,5 %** |
+| czas analizy / czas nagrania (WebAssembly w node) | 0,05 | | 0,15–0,17 |
+
+Gen 5 działa przy analizie nagrania (plik, demo, ponowna analiza po zatrzymaniu mikrofonu); na żywo zostaje klasyczny detektor.
+Wykresy uczenia i porównanie generacji: artefakt „Gitara Słuchacz: pomiary”.
 
 ### Generacja 4: losowe środowiska, model maski i model nut
 
@@ -257,6 +293,9 @@ python3 tools/train_model.py --syn zrzuty korpus --gs zrzuty_gs annotation --out
 # gen 4: środowiska, maska i model nut
 g++ -std=c++17 -O2 tools/gen_env.cpp -o gen_env && ./gen_env env_train 100000 240 && ./gen_env env_test 900000 60
 for f in env_train/env_*[0-9].wav; do GT_DUMPM=zrzuty_maski/$(basename $f .wav).bin ./gt_cli analyze $f /dev/null; done
+# gen 5: zrzut wejścia HCQT i uczenie (PyTorch)
+for f in env_train/env_*[0-9].wav; do GT_DUMPH=hcqt/env/$(basename $f .wav).bin ./gt_cli analyze $f /dev/null; done
+python3 tools/train_gen5.py --src środowiska hcqt/env env_train 0.25 --src korpus hcqt/syn prawda 0.25 --src GuitarSet hcqt/gs annotation 0.5 --attn --resume
 python3 tools/train_mask.py --train env_train zrzuty_maski --test env_test zrzuty_maski_test
 python3 tools/train_model.py --env zrzuty_env env_train --syn ... --gs ... --ensemble 3 --weights "korpus=0.25,środowiska=0.25,GuitarSet=0.5"
 ```
@@ -273,6 +312,7 @@ python3 tools/train_model.py --env zrzuty_env env_train --syn ... --gs ... --ens
 | `src/gt_engine.hpp` | silnik: strumień → ramki, strój, próg, akordy, stroik |
 | `src/gt_fingering.hpp` | struny i progi, ograniczenia fizyczne ręki |
 | `src/gt_hand.hpp` | śledzenie ręki: filtr nut niemożliwych do zagrania, strefa ręki |
+| `src/gt_hcqt.hpp`, `src/gt_gen5.hpp`, `src/gt_gen5model.hpp` | gen 5: wejście HCQT, sieć z uwagą i dekoder nut, wagi (z `tools/train_gen5.py`) |
 | `src/gt_model.hpp` | wagi modelu nut gen 4 (generowane przez `tools/train_model.py`) |
 | `src/gt_mask.hpp`, `src/gt_maskmodel.hpp` | model maski: ile w każdym paśmie jest gitary (wagi z `tools/train_mask.py`) |
 | `tools/gen_env.cpp` | generator losowych środowisk (gitara + pokój + mikrofon + otoczenie, osobno sama gitara) |

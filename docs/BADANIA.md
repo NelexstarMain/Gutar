@@ -19,6 +19,7 @@ Każdy punkt wdrożony i zmierzony na korpusie syntetycznym (zbiór kontrolny) o
 | 6 | ComplexFlux, lepszy wybór pików | nie wdrożone | początki poprawiono przez pkt 4 (funkcja początku na wysokość) |
 | 7 | model uczony (AI) | wdrożone: mała sieć (1 601 wag) oceniająca kandydatów na nuty, uczona na korpusie i GuitarSet, działa w WebAssembly; przy analizie nagrania | GuitarSet 03–05: F1 nut 56,2 → 61,7 %, akompaniament: prima 45,7 → 49,2 %; korpus: nuty 81,6 → 91,6 % |
 | 7+ | model nut gen 4 i model maski (odszumianie pasm), uczone na losowych środowiskach (`tools/gen_env.cpp`) | wdrożone przy analizie nagrania | GuitarSet 03–05: F1 nut 61,7 → 62,5 %, akompaniament: prima 49,2 → 50,0 %, dur/moll 46,6 → 48,2 %; nowe środowiska: nuty 68,9 → 70,9 % |
+| 7++ | gen 5: konwolucyjna sieć na HCQT z blokiem uwagi w czasie (Onsets and Frames, Basic Pitch, HCQT) | wdrożone przy analizie nagrania | GuitarSet 03–05: F1 nut 62,5 → 79,5 %, akompaniament 52,1 → 75,6 %, nuty z końcem 26,9 → 40,9 % |
 | + | odszumianie z wielu klatek (widmo szumu tła z całego nagrania) | wdrożone przy analizie nagrania; na żywo odrzucone | szum tonalny: początki nut w melodiach 90,2 → 97,4 %; czyste nagrania bez zmian |
 | 8 | pomiar na prawdziwych nagraniach | wdrożone: `tools/guitarset_eval.py`, mir_eval, 50 ms | patrz README |
 | + | **akordy składane z nut** (prośba użytkownika) | wdrożone przy analizie pliku; na żywo zostaje dowód z ramek (z samych nut gorzej) | GuitarSet, akompaniament: prima 40,4 → 45,7 %, dur/moll 34,0 → 41,9 % |
