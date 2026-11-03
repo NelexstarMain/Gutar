@@ -105,16 +105,21 @@ def cache_key(path, cfg: FeatureConfig):
     return hashlib.sha1(s.encode()).hexdigest()[:20]
 
 
-def cached_hcqt(audio_path, cfg: FeatureConfig, cache_dir=None, loader=None):
-    """HCQT pliku z pamięcią podręczną na dysku (cechy liczone raz na konfigurację)."""
+def cached_hcqt(audio_path, cfg: FeatureConfig, cache_dir=None, loader=None, fp16=False, mmap=False):
+    """HCQT pliku z pamięcią podręczną na dysku (cechy liczone raz na konfigurację).
+    fp16: zapis w float16 (osobny plik .f16.npy); mmap: zwraca np.memmap tylko do odczytu (bez wczytywania do RAM)."""
     from .audio import load_audio
     if cache_dir:
         os.makedirs(cache_dir, exist_ok=True)
-        cp = os.path.join(cache_dir, cache_key(audio_path, cfg) + '.npy')
+        cp = os.path.join(cache_dir, cache_key(audio_path, cfg) + ('.f16.npy' if fp16 else '.npy'))
         if os.path.exists(cp):
-            return np.load(cp)
+            return np.load(cp, mmap_mode='r' if mmap else None)
     x = loader(audio_path) if loader else load_audio(audio_path, cfg.sr, cfg.frontend)
     X = hcqt(x, cfg)
     if cache_dir:
-        np.save(cp, X)
+        tmp = cp[:-4] + '.%d.tmp.npy' % os.getpid()
+        np.save(tmp, X.astype(np.float16) if fp16 else X)
+        os.replace(tmp, cp)  # atomowo: równoległe procesy nie zostawią uciętego pliku
+        if mmap or fp16:
+            return np.load(cp, mmap_mode='r' if mmap else None)
     return X

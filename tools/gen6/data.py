@@ -406,20 +406,57 @@ def summarize(examples: Iterable[Example]):
 
 # ------------------------------------------------------------------ cechy i zbiór do uczenia
 
-def example_features(ex: Example, fcfg: FeatureConfig, cache_dir=None):
-    """[T, C, P] dla przykładu: gotowe cechy (npy / zrzut silnika) albo HCQT liczone z dźwięku."""
+def example_features(ex: Example, fcfg: FeatureConfig, cache_dir=None, fp16=False, mmap=False):
+    """[T, C, P] dla przykładu: gotowe cechy (npy / zrzut silnika) albo HCQT liczone z dźwięku.
+    fp16 / mmap: pamięć podręczna w float16 i odczyt przez memmap (wtedy wynik może nie być float32: rzutuj wycinki)."""
     from .features import cached_hcqt, hcqt, load_engine_dump
     if 'signal' in ex.meta:  # dźwięk w pamięci (synth, testy), już w fcfg.sr
         return hcqt(ex.meta['signal'], fcfg)
     if ex.features:
-        X = load_engine_dump(ex.features) if ex.features.endswith('.bin') else np.load(ex.features)
         hop = ex.features_hop or fcfg.hop
         if hop != fcfg.hop:
             raise ValueError('%s: cechy mają krok %d, konfiguracja %d (ustaw features.hop=%d)' % (ex.id, hop, fcfg.hop, hop))
-        return X.astype(np.float32)
+        if ex.features.endswith('.bin'):
+            return load_engine_dump(ex.features)
+        X = np.load(ex.features, mmap_mode='r' if mmap else None)
+        return X if mmap else X.astype(np.float32)
     if not ex.audio:
         raise ValueError('%s: brak dźwięku i cech' % ex.id)
-    return cached_hcqt(ex.audio, fcfg, cache_dir)
+    return cached_hcqt(ex.audio, fcfg, cache_dir, fp16=fp16, mmap=mmap)
+
+
+def _feat_job(args):
+    ex, fcfg, cache_dir, fp16 = args
+    try:
+        X = example_features(ex, fcfg, cache_dir, fp16=fp16, mmap=True)
+        return ex.id, len(X), None
+    except Exception as err:  # uszkodzony plik nie zatrzymuje całego zbioru
+        return ex.id, 0, repr(err)
+
+
+def precompute_features(examples, cfg: Config, jobs=None, log=print):
+    """Liczy cechy wszystkich przykładów równolegle do pamięci podręcznej (cfg.train.cache_dir). Zwraca przykłady z cechami."""
+    import multiprocessing as mp
+    import time
+    jobs = jobs or cfg.train.workers or os.cpu_count() or 1
+    todo = [(e, cfg.features, cfg.train.cache_dir, cfg.train.cache_fp16) for e in examples]
+    ok, t0, bad = set(), time.time(), 0
+    if jobs <= 1 or not cfg.train.cache_dir:
+        res = map(_feat_job, todo)
+    else:
+        pool = mp.get_context('fork').Pool(jobs)
+        res = pool.imap_unordered(_feat_job, todo, chunksize=4)
+    for k, (i, T, err) in enumerate(res):
+        if err:
+            bad += 1
+            log('cechy %s: %s' % (i, err))
+        elif T:
+            ok.add(i)
+        if (k + 1) % 500 == 0 or k + 1 == len(todo):
+            log('cechy: %d/%d (%.0f s, błędów %d)' % (k + 1, len(todo), time.time() - t0, bad))
+    if jobs > 1 and cfg.train.cache_dir:
+        pool.close(); pool.join()
+    return [e for e in examples if e.id in ok]
 
 
 class TrainSet:
@@ -430,7 +467,7 @@ class TrainSet:
         self.cfg, self.rng = cfg, rng or np.random.default_rng(cfg.train.seed)
         self.items = []
         for e in examples:
-            X = example_features(e, cfg.features, cfg.train.cache_dir)
+            X = example_features(e, cfg.features, cfg.train.cache_dir, fp16=cfg.train.cache_fp16, mmap=cfg.train.lazy)
             if not len(X):
                 continue
             self.items.append((e, X, make_targets(e, len(X), cfg.features, cfg.labels)))
@@ -444,15 +481,16 @@ class TrainSet:
         w = np.array([self.items[by_src[s][0]][0].weight for s in self.sources], float)
         self.src_p = w / w.sum()
 
-    def sample(self, L):
+    def sample(self, L, rng=None):
         """-> (x [L,C,P], mapy celów [L,...], avail [5], valid [L]); krótsze nagrania dopełnione zerami (valid = 0)."""
-        s = self.sources[self.rng.choice(len(self.sources), p=self.src_p)]
+        rng = rng if rng is not None else self.rng
+        s = self.sources[rng.choice(len(self.sources), p=self.src_p)]
         idx = self.by_src[s]
         lens = np.array([len(self.items[k][1]) for k in idx], float)
-        e, X, (maps, avail) = self.items[idx[self.rng.choice(len(idx), p=lens / lens.sum())]]  # dłuższe nagrania częściej
+        e, X, (maps, avail) = self.items[idx[rng.choice(len(idx), p=lens / lens.sum())]]  # dłuższe nagrania częściej
         T = len(X)
-        t0 = int(self.rng.integers(0, T - L + 1)) if T > L else 0
-        x = X[t0:t0 + L]
+        t0 = int(rng.integers(0, T - L + 1)) if T > L else 0
+        x = np.asarray(X[t0:t0 + L], np.float32)
         tg = {k: v[t0:t0 + L] for k, v in maps.items()}
         n = len(x)
         valid = np.r_[np.ones(n, np.float32), np.zeros(L - n, np.float32)]
@@ -462,6 +500,6 @@ class TrainSet:
                   for k, v in tg.items()}
         return x, tg, avail, valid
 
-    def batch(self, B, L):
-        xs, tgs, av, va = zip(*(self.sample(L) for _ in range(B)))
+    def batch(self, B, L, rng=None):
+        xs, tgs, av, va = zip(*(self.sample(L, rng) for _ in range(B)))
         return (np.stack(xs), {k: np.stack([t[k] for t in tgs]) for k in tgs[0]}, np.stack(av), np.stack(va))

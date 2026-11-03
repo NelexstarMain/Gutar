@@ -121,3 +121,29 @@ python3 -m pytest tools/gen6/tests                                # 18 testów
 3. Porównanie z gen 5 na zbiorze testowym (`evaluate engine` vs `evaluate model`, `compare`).
 4. Przeniesienie do C++/WASM: eksport wag i inferencja jak `src/gt_gen5.hpp`, w tym bloki harmoniczne, normalizacja warstw,
    uwaga w obie strony i między wysokościami oraz nowe głowice.
+
+## Uczenie na Kaggle (`tools/gen6/kaggle/`)
+
+Dwa etapy, żeby nie zużywać limitu GPU na generowanie danych:
+
+| etap | notatnik | sprzęt | co robi |
+|---|---|---|---|
+| A, `prepare.py` | `gutar-gen6-dane` | CPU (4 rdzenie), internet | korpus MIDI (MAESTRO + music21) → `gen_classical` (train: 2 wersje × 1 fragment na utwór, validation/test: 2 wersje) → 900 środowisk gitarowych `gen_env` → GuitarSet (zenodo) → cechy HCQT gen 6 w float16, równolegle → `manifest_<źródło>.jsonl`. Ok. 7 tys. nagrań, ok. 14 GB (limit wyjścia Kaggle: 20 GB). |
+| B, `train_kaggle.py` | `gutar-gen6-trening` | GPU T4, wynik etapu A jako wejście | uczenie gen 6 (`configs/gen6_kaggle.json`: większa sieć, `hidden` 48, `d_model` 64, 250 tys. parametrów; paczka 16, mieszana precyzja), budżet czasu dopasowany do sesji 12 h, potem ocena najlepszej epoki na zbiorach testowych → `run/test.json` |
+
+Źródła i wagi: klasyka 0,5 (podział po utworach), GuitarSet 0,3 (walidacja: funk gracza 02, test: gracze 03–05, jak w gen 5),
+środowiska 0,2 (co 10. nagranie do walidacji). Walidacja po każdej epoce na stałej próbie 180 nagrań.
+
+Nowe opcje `train` (wszystkie z wartościami domyślnymi jak dotąd): `device` (auto/cuda/cpu), `amp`, `lazy` (cechy przez memmap,
+nie w RAM), `cache_fp16`, `max_val`, `prefetch` (paczki przygotowywane w wątku w tle), `time_budget_sec` (po pierwszej epoce liczba
+epok i harmonogram lr przycinane do budżetu), `workers` (równoległe liczenie cech przed uczeniem). Przy braku pamięci GPU na początku
+uczenia paczka jest zmniejszana o połowę.
+
+```bash
+export KAGGLE_API_TOKEN=...                       # klucza nie zapisujemy w repozytorium
+python3 tools/gen6/kaggle/push.py dane            # etap A
+kaggle kernels status <użytkownik>/gutar-gen6-dane
+python3 tools/gen6/kaggle/push.py trening         # etap B, gdy A skończy się powodzeniem
+kaggle kernels output <użytkownik>/gutar-gen6-trening -p wynik/   # best.pt, log.jsonl, test.json, train.log
+```
+Kod jest wklejany do skryptu notatnika (tar.gz w base64), więc Kaggle nie potrzebuje dostępu do repozytorium.

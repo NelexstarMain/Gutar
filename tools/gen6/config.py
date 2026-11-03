@@ -127,7 +127,14 @@ class TrainConfig:
     early_stop: int = 8             # epok bez poprawy
     augment: dict = dc.field(default_factory=lambda: {'gain_db': 6.0, 'pitch_shift_bins': 0, 'noise': 0.0, 'spec_mask': 0.1})
     cache_dir: Optional[str] = None
-    workers: int = 0
+    workers: int = 0                # procesy liczące cechy przed uczeniem (0 = w głównym procesie)
+    device: str = 'auto'            # 'auto' (cuda, jeśli jest), 'cuda', 'cpu'
+    lazy: bool = False              # cechy z pamięci podręcznej przez memmap zamiast w RAM (duże zbiory)
+    cache_fp16: bool = False        # pamięć podręczna cech w float16 (połowa miejsca)
+    max_val: int = 0                # walidacja po epoce na najwyżej tylu nagraniach (0 = wszystkie), stała próba
+    prefetch: int = 4               # paczki przygotowywane w wątku w tle
+    time_budget_sec: float = 0      # > 0: po 1. epoce liczba epok przycinana tak, żeby uczenie zmieściło się w czasie
+    amp: bool = False               # mieszana precyzja (float16 na GPU, GradScaler); walidacja zawsze w float32
 
 
 @dc.dataclass

@@ -47,7 +47,8 @@ def evaluate_model(net, examples, cfg: Config, with_maps=True, progress=False):
     """-> (wiersze per plik, nazwy grup, identyfikatory). Używane też przez train.py do walidacji po każdej epoce."""
     rows, groups, ids = [], [], []
     for k, ex in enumerate(examples):
-        X = example_features(ex, cfg.features, cfg.train.cache_dir)
+        X = example_features(ex, cfg.features, cfg.train.cache_dir, fp16=cfg.train.cache_fp16, mmap=cfg.train.lazy)
+        X = np.asarray(X, np.float32)
         if not len(X):
             continue
         p = net.predict(X)

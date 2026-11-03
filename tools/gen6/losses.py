@@ -18,7 +18,7 @@ def _bce(logit, target, mask, pos_weight=1.0, gamma=0.0, smooth=0.0):
     return (l * mask).sum() / mask.sum().clamp(min=1)
 
 
-def total_loss(out, tg, avail, valid, lc: LossConfig):
+def total_loss(out, tg, avail, valid, lc: LossConfig, as_float=True):
     """out: logity z Gen6.forward; tg: mapy celów (torch) [B,T,...]; zwraca (strata, słownik składowych)."""
     parts = {}
     a = {h: avail[:, i] for i, h in enumerate(HEADS)}
@@ -40,4 +40,4 @@ def total_loss(out, tg, avail, valid, lc: LossConfig):
         parts['tab'] = F.cross_entropy(lg, t.reshape(-1), ignore_index=-1) if (t >= 0).any() else lg.sum() * 0
     w = {'onset': lc.w_onset, 'frame': lc.w_frame, 'offset': lc.w_offset, 'velocity': lc.w_velocity, 'tab': lc.w_tab}
     loss = sum(w[k] * v for k, v in parts.items())
-    return loss, {k: float(v.detach()) for k, v in parts.items()}
+    return loss, {k: (float(v.detach()) if as_float else v.detach()) for k, v in parts.items()}
