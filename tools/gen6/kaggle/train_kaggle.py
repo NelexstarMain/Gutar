@@ -26,6 +26,7 @@ def main():
     ap.add_argument('--data'); ap.add_argument('--out', default='/kaggle/working/run')
     ap.add_argument('--config', default=os.path.join(ROOT, 'tools/gen6/configs/gen6_kaggle.json'))
     ap.add_argument('--hours', type=float, default=11.0); ap.add_argument('--eval-hours', type=float, default=0.6)
+    ap.add_argument('--no-guitarset', action='store_true', help='nie dokładaj GuitarSet w etapie B')
     ap.add_argument('--resume', action='store_true'); ap.add_argument('--epochs', type=int); ap.add_argument('--steps', type=int)
     a = ap.parse_args()
     import torch
@@ -45,13 +46,15 @@ def main():
         print(s, flush=True); logf.write(s + '\n'); logf.flush()
 
     # GuitarSet dołączony do etapu B, a nie do A: cechy liczone tutaj (ok. 10 min na CPU)
-    if not os.path.exists(os.path.join(data, 'manifest_guitarset.jsonl')) and glob.glob('/kaggle/input/**/*.jams', recursive=True) + \
-            glob.glob('/kaggle/input/**/annotation.zip', recursive=True):
+    # (z dołączonego zbioru danych albo pobrany z zenodo, gdy notatnik ma internet; bez obu uczenie idzie bez GuitarSet)
+    if not os.path.exists(os.path.join(data, 'manifest_guitarset.jsonl')) and not a.no_guitarset:
         import subprocess
         gsd = os.path.join(os.path.dirname(a.out), 'dane_gs')
         log('liczę cechy GuitarSet do', gsd)
-        subprocess.run([sys.executable, os.path.join(ROOT, 'tools/gen6/kaggle/prepare.py'), '--no-classical', '--env', '0',
-                        '--out', gsd, '--work', '/tmp/g6gs'], check=True)
+        r = subprocess.run([sys.executable, os.path.join(ROOT, 'tools/gen6/kaggle/prepare.py'), '--no-classical', '--env', '0',
+                            '--out', gsd, '--work', '/tmp/g6gs'])
+        if r.returncode:
+            log('GuitarSet: prepare.py zakończony kodem %d, uczenie bez GuitarSet' % r.returncode)
         if os.path.exists(os.path.join(gsd, 'manifest_guitarset.jsonl')):
             extra_gs = os.path.join(gsd, 'manifest_guitarset.jsonl')
     d = json.load(open(a.config))

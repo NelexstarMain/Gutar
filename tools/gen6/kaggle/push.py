@@ -48,7 +48,7 @@ def main():
     ap.add_argument('--args', default='')
     ap.add_argument('--accelerator', default='NvidiaTeslaT4')
     ap.add_argument('--korpus', default='gutar-gen6-korpus', help='zbiór danych z korpus.zip (etap A)')
-    ap.add_argument('--guitarset', default='gutar-guitarset-czesci', help='zbiór danych z GuitarSet (etap B liczy jego cechy); pusty = bez')
+    ap.add_argument('--guitarset', default='', help='opcjonalny zbiór danych z GuitarSet dla etapu B; bez niego etap B pobiera GuitarSet z zenodo (wymaga internetu w notatniku)')
     a = ap.parse_args()
     if not a.user:
         out = subprocess.run(['kaggle', 'config', 'view'], capture_output=True, text=True).stdout
