@@ -145,6 +145,7 @@ def main():
     ap.add_argument('--epochs', type=int, default=14); ap.add_argument('--steps', type=int, default=400)
     ap.add_argument('--out', default=os.path.join(os.path.dirname(__file__), '..', 'src', 'gt_gen5model.hpp'))
     ap.add_argument('--seed', type=int, default=1)
+    ap.add_argument('--resume', action='store_true', help='wznów z <out>.ckpt (zapisywany po każdej epoce)')
     ap.add_argument('--attn', action='store_true', help='blok uwagi w czasie (ostatnia sekunda, 2 głowy)')
     a = ap.parse_args()
     torch.manual_seed(a.seed); rng = np.random.default_rng(a.seed)
@@ -199,7 +200,14 @@ def main():
         net.train(); return res
 
     t_start = time.time()
-    for ep in range(a.epochs):
+    ep0 = 0
+    ck = a.out + '.ckpt'
+    if a.resume and os.path.exists(ck):
+        st = torch.load(ck, weights_only=False)
+        net.load_state_dict(st['net']); opt.load_state_dict(st['opt']); sched.load_state_dict(st['sched'])
+        ep0 = st['epoch'] + 1; rng = st['rng']; torch.set_rng_state(st['trng'])
+        print('wznowiono od epoki %d' % ep0, flush=True)
+    for ep in range(ep0, a.epochs):
         tot = 0
         for st in range(a.steps):
             x, fr, on = batch()
@@ -211,6 +219,8 @@ def main():
         r = evaluate()
         print('epoka %2d  strata %.4f  ' % (ep, tot / a.steps) + '  '.join('%s: klatki F1 %.3f, początki F1 %.3f' % (k, v[0], v[1]) for k, v in r.items()) +
               '  (%.0f s)' % (time.time() - t_start), flush=True)
+        torch.save({'net': net.state_dict(), 'opt': opt.state_dict(), 'sched': sched.state_dict(), 'epoch': ep, 'rng': rng,
+                    'trng': torch.get_rng_state()}, ck)
     export(net, a.out, 'walidacja: ' + '; '.join('%s klatki %.3f początki %.3f' % (k, v[0], v[1]) for k, v in r.items()))
     torch.save(net.state_dict(), a.out + '.pt')
     print('zapisano', a.out)
