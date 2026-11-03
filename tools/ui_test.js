@@ -25,6 +25,8 @@ const until = async (page, fn, t = 30000) => { await page.waitForFunction(fn, nu
   await page.screenshot({ path: path.join(out, 'desktop-dark.png'), fullPage: true });
 
   await page.click('#btnDemo');
+  // demo jest analizowane od nowa (z modelem gen 5 trwa to dłużej): czekamy na start odtwarzania, potem 2,5 s gry
+  await until(page, () => window.__gs.S.playing);
   await page.waitForTimeout(2500);
   const t1 = await page.evaluate(() => window.__gs.S.viewT);
   ok(t1 > 1, 'odtwarzanie przesuwa kursor (t=' + t1.toFixed(2) + ' s)');

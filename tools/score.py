@@ -12,6 +12,8 @@ Metryki:
   note_f1     F1 obecności dźwięku (dokładna wysokość MIDI), siatka co 50 ms
   pc_f1       F1 obecności klasy dźwięku (bez oktawy)
   onset_f1    F1 początków dźwięków (dokładna wysokość, tolerancja 120 ms)
+  on50        to samo z tolerancją 50 ms (jak w mir_eval i publikacjach)
+  ev_f1       F1 obecności dźwięku liczone z listy nut (zdarzeń), a nie z ramek, siatka co 50 ms
   tune_ok     % ramek stroika z poprawnym dźwiękiem (pojedyncza nuta)
   tune_cov    % ramek z pojedynczą nutą, dla których stroik coś pokazał
   tune_err    mediana |błąd| częstotliwości stroika [centy]
@@ -91,17 +93,26 @@ def score_file(truth, res):
         ptp += len(epc & rpc); pfp += len(epc - rpc); pfn += len(rpc - epc)
         g += 0.05
     out['note'] = (tp, fp, fn); out['pc'] = (ptp, pfp, pfn)
+    # --- obecność dźwięków z listy nut (zdarzeń)
+    tp = fp = fn = 0
+    g = 0.5
+    while g < end:
+        est = set(e['midi'] for e in res['notes'] if e['t0'] <= g - 0.06 and g <= e['t1'])
+        ref = set(n['midi'] for n in active_truth(truth['notes'], g))
+        tp += len(est & ref); fp += len(est - ref); fn += len(ref - est)
+        g += 0.05
+    out['ev'] = (tp, fp, fn)
     # --- początki dźwięków
-    tol = 0.12
-    used = set(); otp = 0
-    for n in truth['notes']:
-        best = None
-        for i, e in enumerate(res['notes']):
-            if i in used or e['midi'] != n['midi']: continue
-            d = abs(e['t0'] - n['t0'])
-            if d <= tol and (best is None or d < best[0]): best = (d, i)
-        if best: used.add(best[1]); otp += 1
-    out['onset'] = (otp, len(res['notes']) - otp, len(truth['notes']) - otp)
+    for key, tol in (('onset', 0.12), ('on50', 0.05)):
+        used = set(); otp = 0
+        for n in truth['notes']:
+            best = None
+            for i, e in enumerate(res['notes']):
+                if i in used or e['midi'] != n['midi']: continue
+                d = abs(e['t0'] - n['t0'])
+                if d <= tol and (best is None or d < best[0]): best = (d, i)
+            if best: used.add(best[1]); otp += 1
+        out[key] = (otp, len(res['notes']) - otp, len(truth['notes']) - otp)
     # --- stroik (melodie)
     if truth['kind'] == 'melody':
         ok = cov = tot = 0; errs = []
@@ -166,6 +177,8 @@ def main():
         d['note_f1'] = 100 * f1(s('note', 0), s('note', 1), s('note', 2))
         d['pc_f1'] = 100 * f1(s('pc', 0), s('pc', 1), s('pc', 2))
         d['onset_f1'] = 100 * f1(s('onset', 0), s('onset', 1), s('onset', 2))
+        d['on50'] = 100 * f1(s('on50', 0), s('on50', 1), s('on50', 2))
+        d['ev_f1'] = 100 * f1(s('ev', 0), s('ev', 1), s('ev', 2))
         if any('tune' in r for r in rows):
             ok = s('tune', 0); cov = s('tune', 1); tot = s('tune', 2)
             d['tune_ok'] = 100 * ok / max(1, tot); d['tune_cov'] = 100 * cov / max(1, tot)
@@ -177,7 +190,7 @@ def main():
             d['frag'] = sum(frag) / len(frag) if frag else float('nan'); d['over'] = sum(over) / len(over) if over else 0.0
         d['rtf'] = sum(r['rtf'] for r in rows) / len(rows)
         return d
-    cols = ['chord_seg', 'chord_root', 'chord_frm', 'chord_lat', 'flicker', 'note_f1', 'pc_f1', 'onset_f1', 'tune_ok', 'tune_cov', 'tune_err', 'cov', 'cov80', 'frag', 'over', 'rtf']
+    cols = ['chord_seg', 'chord_root', 'chord_frm', 'chord_lat', 'flicker', 'note_f1', 'ev_f1', 'pc_f1', 'onset_f1', 'on50', 'tune_ok', 'tune_cov', 'tune_err', 'cov', 'cov80', 'frag', 'over', 'rtf']
     print('%-16s' % 'grupa' + ''.join('%11s' % c for c in cols))
     allrows = []
     for k in sorted(groups):

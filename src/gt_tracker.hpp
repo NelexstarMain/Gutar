@@ -10,6 +10,7 @@ struct NoteEvent2 {
   double t0 = 0, t1 = 0;
   int vel = 80;
   float f = 0; // dopasowana częstotliwość podstawowa [Hz] (0 = nieznana)
+  float conf = 1; // średnia pewność wykrycia w klatkach nuty (przy modelu: prawdopodobieństwo 0..1)
 };
 
 class NoteTracker {
@@ -18,6 +19,7 @@ public:
     double t0 = 0, last = 0, amp = 0, pre = -1;
     double f = 0, lastStrong = 0, score = 0; // ostatnia dopasowana częstotliwość, czas i siła ostatniego mocnego wykrycia
     int miss = 0, vel = 80;
+    double confSum = 0; int confN = 0;
   };
 
   std::vector<NoteEvent2> events;
@@ -59,6 +61,7 @@ public:
           a.t0 = lastOnset; a.last = t; a.amp = d->amp; a.vel = velocity(d->amp);
           a.f = d->f; a.lastStrong = t; a.score = d->score;
         } else {
+          if (!d->sustained) { a.confSum += d->conf; ++a.confN; }
           a.miss = 0; a.last = t; a.amp = std::max(a.amp * 0.9, (double)d->amp);
           if (!d->sustained) { a.f = d->f; a.lastStrong = t; a.score = d->score; }
         }
@@ -130,6 +133,7 @@ private:
     if (tEnd - a.t0 >= kMinNoteSec && a.last - a.t0 >= kMinNoteSec * 0.8) {
       NoteEvent2 e;
       e.midi = m; e.t0 = a.t0; e.t1 = tEnd; e.vel = a.vel; e.f = (float)a.f;
+      e.conf = a.confN ? (float)(a.confSum / a.confN) : 1.f;
       events.push_back(e);
     }
   }

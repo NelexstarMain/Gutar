@@ -4,13 +4,20 @@ Rozpoznawanie nut, akordów i stroju gitary na żywo z mikrofonu albo z pliku au
 Cała analiza dźwięku jest napisana w **C++17** (`src/`), kompilowana do **WebAssembly** i osadzona
 w jednym pliku HTML. Ten plik działa jako artefakt i jako samodzielna aplikacja offline.
 
-* `dist/gitara-sluchacz.html`: gotowa aplikacja (jeden plik, ok. 2 MB, mikrofon działa po otwarciu z dysku)
-* `dist/gt_engine.wasm`: sam silnik (ok. 280 KB)
+* `dist/gitara-sluchacz.html`: gotowa aplikacja (jeden plik, ok. 5 MB, mikrofon działa po otwarciu z dysku)
+* `dist/gt_engine.wasm`: sam silnik (ok. 400 KB)
 
 ## Co potrafi
 
 * wielogłosowe wykrywanie nut (grzebień alikwotów + kasowanie), z podwojeniami oktawowymi (E2+E3),
-* akordy (20 typów, chwyty z basem, np. `C/G`), stroik z wskaźnikiem w centach i wskazaniem struny,
+* **generacja 5: sieć neuronowa na widmie** (przy analizie nagrania): konwolucyjna sieć z blokiem uwagi (attention) na harmonicznie
+  ułożonym widmie całego nagrania zwraca dla każdej klatki i półtonu p(brzmi) i p(zaczyna się), dekoder składa z tego nuty;
+* **wytrenowane modele (AI)**: przy analizie nagrania model maski ocenia, ile w każdym paśmie jest gitary, a ile otoczenia (szum, stuki,
+  tony), a model nut (gen 4: zespół 4 sieci, uczony na losowych środowiskach, korpusie i prawdziwych nagraniach GuitarSet) ocenia każdą kandydującą wysokość w każdej klatce: czy to fala tej gitary, czy
+  szum, odbicie albo alikwot innej struny; do tego **odszumianie**: widmo szumu tła liczone z wszystkich klatek nagrania,
+* **najpierw nuty, potem akordy**: po analizie nagrania akord jest składany z gotowej listy nut (uderzenia = grupy początków nut,
+  spóźnione struny dopełniają akord swojego uderzenia, nuty pasujące do bieżącego akordu nie zmieniają jego nazwy); 20 typów, chwyty z basem, np. `C/G`,
+* stroik z wskaźnikiem w centach i wskazaniem struny,
 * 8 strojów gitary (standard, drop D, DADGAD, open G, …), palcowanie z programowaniem dynamicznym po całym utworze,
 * **śledzenie lewej ręki** (`src/gt_hand.hpp`): zestaw nut brzmiących naraz musi dać się zagrać jednym ułożeniem palców
   (cztery palce, rozpiętość zależna od pozycji, barre bez strun na niższym progu, osobne palce gdy barre jest niemożliwe), a pozycja
@@ -52,24 +59,188 @@ dudnienie polaryzacji, ślizg wysokości przy ataku, rezonans pudła, pogłos, s
 `tools/run_bench.sh` uruchamia **oryginalny silnik JS** (`tools/baseline/`) i nowy silnik na tych samych plikach i liczy te same metryki
 (`tools/score.py`). Parametry były strojone na zbiorze `dev`; poniżej zbiór kontrolny `holdout` (64 nagrania, inne ziarna).
 
-| metryka (holdout) | oryginał JS | nowy C++ |
-|---|---:|---:|
-| akord rozpoznany poprawnie (uderzenia) | 90,2 % | **96,3 %** |
-| akord poprawny w ramkach okna oceny | 87,0 % | **95,5 %** |
-| migotanie etykiety akordu (zmian/akord) | 0,48 | **0,13** |
-| opóźnienie pierwszego poprawnego akordu | 0,54 s | **0,34 s** |
-| akord przy rozstrojonej gitarze (−35…+32¢) | 64,8 % | **100 %** |
-| nuty (F1 obecności dźwięku) | 74,2 % | **81,0 %** |
-| początki nut (F1, tol. 120 ms) | 70,0 % | **79,5 %** |
-| pokrycie słyszalnego czasu nuty | 64,8 % | **74,3 %** |
-| stroik: trafiony dźwięk (melodie) | 90,5 % | **97,6 %** |
-| stroik: mediana błędu częstotliwości | 0,72¢ | **0,30¢** |
-| czas analizy / czas nagrania (natywnie; WebAssembly ok. 0,03) | 0,033 | **0,021** |
+| metryka (holdout) | oryginał JS | poprzedni C++ | C++ bez modelu | model gen 3 | **model gen 4** |
+|---|---:|---:|---:|---:|---:|
+| akord rozpoznany poprawnie (uderzenia) | 90,2 % | 96,3 % | 98,5 % | **98,8 %** | 98,5 % |
+| akord poprawny w ramkach okna oceny | 87,0 % | 95,5 % | 97,4 % | **98,4 %** | 98,3 % |
+| migotanie etykiety akordu (zmian/akord) | 0,48 | 0,13 | 0,09 | 0,03 | **0,02** |
+| akord przy rozstrojonej gitarze (−35…+32¢) | 64,8 % | **100 %** | 98,1 % | 98,1 % | 98,1 % |
+| nuty (F1 obecności dźwięku w ramkach) | 74,2 % | 81,0 % | 81,6 % | 91,6 % | **92,1 %** |
+| nuty (F1 obecności z listy nut) | | 81,5 % | 82,4 % | 91,6 % | **92,0 %** |
+| początki nut (F1, tol. 120 ms) | 70,0 % | 79,5 % | 80,5 % | 86,7 % | **87,6 %** |
+| początki nut (F1, tol. 50 ms, jak w publikacjach) | | 54,0 % | 73,5 % | 78,7 % | **79,6 %** |
+| pokrycie słyszalnego czasu nuty | 64,8 % | 74,3 % | 75,7 % | 89,9 % | **90,2 %** |
+| stroik: trafiony dźwięk (melodie) | 90,5 % | 97,6 % | 96,9 % | **98,5 %** | **98,5 %** |
+| stroik: mediana błędu częstotliwości | 0,72¢ | 0,30¢ | 0,30¢ | 0,30¢ | 0,30¢ |
+| czas analizy / czas nagrania (WebAssembly w node) | | 0,03 | | | 0,05 |
+
+Model działa przy analizie nagrania (plik, demo i ponowna analiza po zatrzymaniu mikrofonu). Na żywo z mikrofonu zostaje
+dotychczasowy detektor: z modelem akordy na żywo spadały (95,4 → 88,9 %, model uczony na analizie plików).
 
 Nuta "brzmi" w miarach od 0,12 s po uderzeniu do końca słyszalności (spadek dominującego alikwotu o 40 dB) albo zwolnienia struny.
 Wcześniejsza wersja miary liczyła tylko pierwsze 1,2 s i karała poprawnie podtrzymane nuty; liczby w tabeli są z poprawionej miary dla obu silników.
 
-**Co poprawiło dokładność w ostatniej rundzie** (zbiór kontrolny, względem poprzedniej wersji):
+Opóźnienie pierwszego poprawnego akordu nie jest już w tabeli: w analizie pliku akordy powstają z gotowej listy nut i są
+wyrównane w czasie do uderzeń, więc ta liczba przestała mierzyć to samo co dawniej. Analiza jest ok. 3× wolniejsza niż w poprzedniej
+wersji (dokładne początki nut liczone osobno dla każdej nuty), nadal kilkanaście razy szybciej niż czas rzeczywisty.
+
+### Prawdziwe nagrania: GuitarSet
+
+Korpus syntetyczny pokazuje różnice między wersjami, ale nie dokładność na prawdziwej gitarze. Dlatego silnik jest też mierzony na
+**GuitarSet** (Xi i in., ISMIR 2018: 360 nagrań gitary akustycznej z mikrofonu, 6 gitarzystów, nuty z przetwornika heksafonicznego,
+akordy z partytury), skryptem `tools/guitarset_eval.py` z metrykami **mir_eval** (te same co w publikacjach). Strojone na graczach
+00–02, poniżej gracze 03–05:
+
+| GuitarSet, gracze 03–05 | poprzedni C++ | C++ bez modelu | model gen 3 | **model gen 4** | bez modelu, okno 186 ms |
+|---|---:|---:|---:|---:|---:|
+| nuty, F1 początków (50 ms, ±50¢), wszystkie nagrania | 47,7 % | 56,2 % | 61,7 % | **62,5 %** | 57,8 % |
+| … precyzja / czułość | 66,5 / 39,8 % | 73,4 / 48,7 % | 80,5 / 52,4 % | **81,0 / 53,2 %** | 75,7 / 50,0 % |
+| nuty z początkiem i końcem | 22,7 % | 24,9 % | 26,6 % | 26,9 % | **28,3 %** |
+| obecność nut w siatce 50 ms | 63,3 % | 64,1 % | 70,6 % | **71,5 %** | 65,9 % |
+| nuty, melodie (solo) | 61,1 % | 69,4 % | 72,9 % | **73,0 %** | 71,0 % |
+| nuty, akompaniament | 34,3 % | 42,9 % | 50,6 % | **52,1 %** | 44,6 % |
+| akompaniament: prima akordu | 40,4 % | 45,7 % | 49,2 % | **50,0 %** | 45,7 % |
+| akompaniament: akord dur/moll (mir_eval majmin) | 34,0 % | 42,3 % | 46,6 % | **48,2 %** | 42,8 % |
+
+(Kolumna „bez modelu” zawiera już odszumianie; liczby bez modelu różnią się od poprzedniej wersji tego README o ±0,3 pkt.)
+
+### Generacja 5: sieć na widmie z uwagą
+
+Zamiast poprawiać decyzje klasycznego detektora (generacje 3–4: 32–44 ręcznie liczone cechy), generacja 5 uczy się wprost z widma, jak
+współczesne modele transkrypcji (Onsets and Frames, Hawthorne i in. 2018; Basic Pitch, Bittner i in. 2022).
+
+* **Wejście** (`src/gt_hcqt.hpp`): harmonicznie ułożone widmo (HCQT, Bittner i in. 2017) całego nagrania: 159 wysokości co 1/3 półtonu
+  (MIDI 36–88), klatki co 46 ms wyrównane z ramkami silnika, 9 kanałów: alikwoty 0,5×, 1×, 2×…5× z okna 372 ms i 1×–3× z okna 93 ms;
+  dB względem 99,5. percentyla nagrania (niezależne od poziomu).
+* **Sieć** (`src/gt_gen5.hpp`, wagi `src/gt_gen5model.hpp`, uczenie `tools/train_gen5.py`): 5 warstw konwolucji z połączeniami
+  resztkowymi (alikwoty i sąsiednie wysokości, kontekst ±4 klatki, warstwa z dylatacją 36 binów = oktawa niżej i wyżej), potem
+  **blok uwagi w czasie**: dla każdej wysokości klatka patrzy na ostatnią sekundę (22 klatki) tej samej wysokości, 2 głowy, wyuczona
+  premia za odległość, feed-forward; na końcu 2 wyjścia na półton: p(brzmi), p(zaczyna się). 37 tys. parametrów.
+* **Dekoder**: nuta zaczyna się w lokalnym maksimum p(zaczyna się) ≥ 0,5 (albo przy p(brzmi) ≥ 0,7 przez 2 klatki) i trwa, dopóki
+  p(brzmi) ≥ 0,5; nowy początek w trakcie nuty to ponowne szarpnięcie. Potem jak dotąd: docinanie początków krótkim oknem, akordy z nut.
+  Duplikaty (ta sama wysokość, początki bliżej niż 30 ms) są scalane.
+* **Uczenie**: PyTorch na CPU, 16 epok × 500 kroków (wycinki po 96 klatek), ok. 35 min dla samej konwolucji i 70 min z uwagą; dane jak
+  w gen 4 (środowiska, korpusy, GuitarSet 00–02; walidacja: funk gracza 02), wagi źródeł GuitarSet 0,5, reszta po 0,25. Zapis stanu
+  po każdej epoce (`--resume`). Inferencja w C++ zgodna z PyTorch do 1e-6.
+
+| zbiory kontrolne | gen 4 | gen 5, sama konwolucja | **gen 5 z uwagą** |
+|---|---:|---:|---:|
+| GuitarSet 03–05: nuty F1 (50 ms) | 62,5 % | 78,5 % | **79,5 %** |
+| … precyzja / czułość | 81,0 / 53,2 % | 81,3 / 77,3 % | **82,0 / 78,2 %** |
+| GuitarSet: nuty z początkiem i końcem | 26,9 % | 40,3 % | **40,9 %** |
+| GuitarSet: akompaniament / melodie | 52,1 / 73,0 % | 73,8 / 83,3 % | **75,6 / 83,4 %** |
+| GuitarSet, akompaniament: prima / dur-moll | 50,0 / 48,2 % | 53,8 / 58,4 % | **54,6 / 59,1 %** |
+| nowe środowiska: nuty / początki | 70,9 / 60,6 % | 76,6 / 81,2 % | **79,8 / 83,4 %** |
+| korpus kontrolny: akordy / nuty | 98,5 / 92,1 % | 99,7 / 93,9 % | **100 / 95,1 %** |
+| korpus: początki nut (50 ms) | 79,6 % | 87,5 % | **87,5 %** |
+| czas analizy / czas nagrania (WebAssembly w node) | 0,05 | | 0,15–0,17 |
+
+Gen 5 działa przy analizie nagrania (plik, demo, ponowna analiza po zatrzymaniu mikrofonu); na żywo zostaje klasyczny detektor.
+Wykresy uczenia i porównanie generacji: artefakt „Gitara Słuchacz: pomiary”.
+
+### Generacja 4: losowe środowiska, model maski i model nut
+
+**Środowiska** (`tools/gen_env.cpp`). Każde nagranie losuje wszystko od nowa, żeby model nie mógł nauczyć się jednego szumu ani
+jednego utworu: treść (uderzenia w losowe chwyty możliwe do zagrania, także stłumione i niepełne; arpeggia o losowym wzorze,
+tempie i wybrzmiewaniu, czasem dwie struny naraz; losowe nuty z procesu Poissona do 4 naraz; melodie legato i staccato),
+dynamikę (poziom bazowy, crescendo/decrescendo, akcenty, bardzo ciche nuty), pokój (pogłos 0,15–1,6 s), „kąt mikrofonu” (1–4 losowe
+filtry, wczesne odbicie jako filtr grzebieniowy, nachylenie widma) oraz otoczenie: szum o losowej barwie (od brązowego do niebieskiego,
+czasem falujący), 1–5 stałych tonów z harmonicznymi (wentylator, silnik), brum 50/60 Hz, stuki (wygasające rezonanse o losowej
+wysokości, każdy z innego kierunku, od −36 do +4 dB względem szczytu gitary), kliknięcia, hałas przerywany w rytmie mowy; SNR 3–45 dB,
+poziom nagrania od −32 do −1 dBFS. Zapisuje osobno mikrofon i samą gitarę (do uczenia maski). Uczenie: 240 nagrań, test: 60 innych ziaren.
+
+| nowe środowiska (60 nagrań testowych) | bez modelu | model gen 3 | **model gen 4** |
+|---|---:|---:|---:|
+| nuty (F1 obecności w ramkach) | 64,2 % | 68,9 % | **70,9 %** |
+| nuty (F1 z listy nut) | 64,3 % | 68,6 % | **70,3 %** |
+| początki nut (120 ms / 50 ms) | 54,9 / 50,3 % | 58,6 / 53,8 % | **60,6 / 55,9 %** |
+| pokrycie słyszalnego czasu nuty | 46,3 % | 52,1 % | **53,1 %** |
+
+**Model maski** (`src/gt_mask.hpp`, wagi `src/gt_maskmodel.hpp`, uczenie `tools/train_mask.py`). Widmo w 156 pasmach co pół półtonu
+(55 Hz – 5 kHz); dla każdego pasma 15 cech (energia, kontrast z sąsiednimi pasmami, dwie poprzednie klatki, szum lokalny i szum tła,
+pasma o oktawę i duodecymę obok, czy jest pik) i sieć 15 → 24 → 12 → 1, która przewiduje, jaka część energii pasma to gitara
+(etykieta: idealna maska z osobno zapisanej gitary i otoczenia). Na 60 nagraniach testowych: zgodność decyzji gitara/otoczenie 84,8 %,
+usuwa 77 % pasm zdominowanych przez otoczenie i 4,8 % pasm gitary. Użycie: (1) piki w pasmach z maską < 0,3 odpadają, (2) model nut
+dostaje maskę na 6 pierwszych alikwotach kandydata, jej średnią i jej narastanie względem poprzedniej klatki (dowód początku nuty).
+Samo czyszczenie pików nie zmienia wyników (±0,1 pkt: usuwane piki i tak nie wpływały na decyzje); zysk daje maska jako dowód dla modelu
+nut: bez cech z maski gen 4 ma w środowiskach −0,5 pkt i w akompaniamencie GuitarSet −0,7 pkt (w melodiach +0,5 pkt).
+
+**Model nut gen 4** (`src/gt_model.hpp`). 44 cechy (32 jak w gen 3 + maska + dwie poprzednie klatki, zmiana siły, liczba alikwotów),
+trzy sieci 44 → 64 → 32 → 1 z różnych ziaren i sieć gen 3 (na 32 pierwszych cechach); wynik = 0,4 · gen 3 + 0,6 · średnia gen 4, próg 0,40.
+Dane: środowiska (240), korpusy `dev`, 10000, 15000 i GuitarSet 00–02 (walidacja: funk gracza 02); wagi źródeł: GuitarSet 0,5,
+korpus 0,25, środowiska 0,25. Uczenie ok. 2 min na CPU.
+Kolejne wersje (zbiory kontrolne): 4a (jedna sieć, źródła po równo): środowiska i akompaniament lepsze od gen 3, ale melodie GuitarSet
+72,9 → 71,5 % i akordy korpusu 98,8 → 97,5 %; 4b (zespół 3 sieci, GuitarSet 0,5): melodie 71,8 %; 4c (więcej GuitarSet do uczenia,
+próg 0,40): 72,1 %; 4c + pewność nut w akordach: akordy korpusu 97,5 → 97,9 %; zespół z gen 3 (25 %, potem 40 %): melodie 73,0 %,
+akordy korpusu 98,5 %. Gen 4 jest lepsza od gen 3 we wszystkich miarach GuitarSet i środowisk; na korpusie kontrolnym akordy
+98,5 vs 98,8 % (jedno uderzenie na 325).
+**Pewność nut w akordach**: każda nuta pamięta średnie prawdopodobieństwo modelu ze swoich klatek; przy składaniu akordu waży
+pewność². Maska i model działają przy analizie nagrania; na żywo maska (uczona z widmem szumu z całego nagrania) psuła akordy (95 → 36 %).
+
+### Model (AI) i odszumianie (generacja 3)
+
+**Model** (`src/gt_model.hpp`, uczony skryptem `tools/train_model.py`). Detektor zachłanny zostaje, ale nie decyduje sam: dla każdej
+wysokości, która ma w klatce co najmniej 2 z 6 pierwszych alikwotów, liczone są 32 cechy (siła 10 alikwotów, czy wyjaśniają je
+inne wybrane nuty, decyzja detektora i nuty o oktawę, kwintę i duodecymę obok, poprzednia klatka, uderzenie, poziom sygnału),
+a sieć 32 → 32 → 16 → 1 (ReLU, sigmoid, 1 601 wag) zwraca prawdopodobieństwo, że to prawdziwa nuta. Zostają wysokości z p ≥ 0,45.
+Dane uczące: zrzuty cech z silnika (`GT_DUMP=plik.bin gt_cli analyze ...`) z korpusu `dev` i dwóch dodatkowych korpusów o innych
+ziarnach (10000, 15000; nie `holdout`) oraz z GuitarSet, graczy 00–02 (gracz 02 jako walidacja). Etykieta: czy ta wysokość brzmi
+według prawdy; klatki przy samej granicy nuty są pomijane. Uczenie trwa ok. 30 s na CPU (numpy), bez GPU.
+Na walidacji (klatki, kandydaci): korpus F1 0,787 → 0,949, GuitarSet 0,754 → 0,835 względem samego detektora zachłannego.
+Nuta dodana przez model, będąca oktawą innej wybranej nuty, jest oznaczana jak podwojenie oktawowe (stroik ją pomija).
+Sprawdzone wersje modelu: (1) tylko korpus `dev` + GuitarSet: dobre nuty, ale w melodiach z szumem dokładał oktawy (stroik 89,5 %);
+(2) + dodatkowe korpusy + zrzuty z trybu na żywo: stroik naprawiony, akordy −1,2 pkt; (3) bez zrzutów na żywo: najlepsza, ta w kodzie.
+Dane GuitarSet: Xi i in., ISMIR 2018, licencja CC BY 4.0 (https://zenodo.org/records/3371780); wagi modelu powstały częściowo z tych danych.
+
+**Odszumianie z wielu klatek** (`denoise`). W przed-przebiegu analizy pliku dla każdego binu widma zbierany jest histogram amplitud
+ze wszystkich klatek nagrania (także cichych); 15. percentyl to widmo szumu tła. Pik liczy się tylko, gdy jest ≥ 3× (ok. 10 dB) ponad nim.
+Lokalny próg w klatce (4,5× średniej z ±100 Hz) i tak usuwa szum szerokopasmowy, więc zysk widać przy szumie tonalnym (wentylator,
+piszczący zasilacz, buczenie poza 50/60 Hz). Test: 18 nagrań z korpusu z dodanymi 4 stałymi tonami: akordy 90,1 → 91,6 %, początki nut
+w melodiach 90,2 → 97,4 %, stroik 94,4 → 98,5 %; na czystym korpusie i GuitarSet ±0,2 pkt. Na żywo wyłączone: statystyka minimów
+(Martin 2001) uznawała długo brzmiące struny za szum (akordy na żywo 95,4 → 81,2 %), a szum z klatek ciszy obejmował ogony strun (stroik 96,8 → 91,8 %).
+
+Wnioski: (1) na prawdziwych nagraniach nuty są dużo trudniejsze niż w korpusie: wykrywana jest mniej więcej połowa nut, a w akompaniamencie
+jedna trzecia (szybkie, tłumione uderzenia, krótkie nuty). Nuty krótsze niż 0,2 s to większość nut w melodiach i z nich trafiamy 26–40 %.
+(2) Krótsze okno (186 ms, w ustawieniach „Szybkie melodie”) daje lepsze nuty na GuitarSet, ale na korpusie syntetycznym akordy spadają
+(98,5 → 93,9 %, na żywo 95,4 → 92,6 %), a fałszywych dźwięków w akordach jest prawie 2× więcej, dlatego domyślne zostaje 372 ms.
+(3) Akordy w jazzie, funku i bossa novie (septymy, nony, często bez prymy) są rozpoznawane słabo (prima 18–28 %); rock i singer-songwriter 70–74 %.
+
+**Ostatnia runda: metody z `docs/BADANIA.md`** (efekty na zbiorach kontrolnych):
+
+| zmiana | efekt |
+|---|---|
+| **akordy z listy nut** (`chordsFromNotes`): uderzenia = grupy początków nut, nowe nuty w uderzeniu albo (arpeggio) także nuty brzmiące wcześniej, z wagą malejącą w czasie; spóźnione struny do 0,6 s dopełniają akord; nuty pasujące do akordu go nie zmieniają; wysokości widoczne w ramkach, ale niepotwierdzone jako nuty, dokładają słaby dowód (0,6) | korpus: akordy 96,3 → 98,5 %, ramki 95,5 → 97,5 %; GuitarSet (akompaniament): prima 40,4 → 45,7 %, dur/moll 34,0 → 41,9 %. Bez słabego dowodu z ramek prima na GuitarSet była gorsza od dawnej metody (48,7 vs 50,2 % na graczach 00–02), z nim 54,8 % |
+| **początek nuty liczony na wysokość** (`refineEvents`): energia każdego alikwotu osobno, okno 93 ms co 11,6 ms; alikwot nie świadczy w chwili, w której zaczyna się inna nuta, która go dzieli | korpus: początki w tolerancji 50 ms 54 → 74 %; w uderzeniu każda struna ma własny czas (mediana błędu początku 31 → 14 ms, zbiór roboczy) |
+| **ponowne szarpnięcie tej samej struny** dzielone na dwie nuty (skok ≥ 8 dB w alikwotach niewspólnych z nutami zaczynającymi się w tej chwili) | korpus, arpeggio: F1 początków 53 → 58 %; pokrycie nut +1 pkt. Wcześniejsza próba (README niżej) odrzucona, bo brała pod uwagę wszystkie wspólne alikwoty |
+| **model miejsca szarpnięcia w teście oktaw** (Traube i Smith): \|sin(π h p)\| dopasowane do nieparzystych alikwotów przewiduje parzyste | korpus, melodie: F1 początków 95,6 → 98,2 % (zbiór roboczy), mniej fałszywych oktaw nad pojedynczą struną |
+| **ocena łączna zbioru nut**: usuwanie nut, których alikwoty w całości wyjaśniają inne (poza podwojeniami oktawowymi) | mały zysk (F1 nut +0,1 pkt na zbiorze roboczym) |
+| **nieharmoniczność mierzona dla każdej wysokości**, potem węższe dopasowanie alikwotów | na korpusie bez efektu do oceny: syntezator losuje nieharmoniczność dla każdej nuty osobno, a w gitarze jest stała dla struny. Kontrolny: nuty +0,1 pkt, stroik −0,6 pkt |
+| przy analizie pliku nuty w ramkach i dowód akordu tylko z nut potwierdzonych przez tracker | korpus: F1 nut w ramkach +0,6 pkt |
+
+**Sprawdzone w tej rundzie i odrzucone**: zamiana poduktawy na oktawę wyżej w ocenie łącznej (duchy −25 %, ale gubi prawdziwy bas,
+bo słaby ton podstawowy niskiej struny wygląda tak samo jak duch; zostawiona w kodzie, wyłączona: `jointSwap`), dwa okna naraz
+(piki poniżej 400 Hz z okna 372 ms, powyżej z 186 ms; bez zysku na GuitarSet, zysk krótkiego okna bierze się z rozdzielczości czasu
+całego potoku), akord na żywo tylko z nut potwierdzonych przez tracker (na żywo akordy −0,9 pkt, większe opóźnienie i migotanie;
+dostępne jako `liveNotes`), okno 186 ms jako domyślne (patrz wyżej). Sieć neuronowa (Basic Pitch i podobne) nie jest dodana: wymaga
+dołączenia wag modelu i osobnego środowiska uruchomieniowego, to osobna decyzja.
+
+**Kontekst czasowy: poprzednie i następne chwile** (sprawdzone, w pomiarze bez zysku, domyślnie wyłączone). Silnik już korzysta z historii:
+nuta musi być widoczna przez 85 ms, przerwy do 130 ms są mostkowane, nuta, która brzmiała, jest szukana dalej z obniżonym progiem
+(podtrzymanie), ręka nie skacze szybciej, niż zdąży, a akord dopełniają spóźnione struny. Dodatkowo sprawdzone (zbiór roboczy korpusu
+i GuitarSet, gracze 00–02):
+
+| mechanizm | parametr | wynik |
+|---|---|---|
+| dopowiadanie nut z sąsiednich uderzeń (±4 s): wysokość grana obok, a tu niewykryta, jeśli po uderzeniu ma ≥ 4 własne alikwoty ponad szumem i nie brzmiała tuż przed nim | `context`, `ctxFill` | korpus: 17 trafnych i 12 błędnych dodanych nut (akordy −0,3 pkt); GuitarSet: prawie nic nie dodaje. Pierwsza wersja (dowodem był atak w alikwotach) dodawała 655 błędnych nut na 7 trafnych: szum uderzenia podnosi wszystkie alikwoty naraz |
+| sklejanie przerwanej nuty bez nowego ataku | `ctxMerge` | GuitarSet: F1 nut −1 pkt (skleja ponowne uderzenia tego samego akordu) |
+| usuwanie krótkich nut bez ataku | `ctxPrune` | bez wpływu (±0,03 pkt) |
+| premia w detektorze dla wysokości słyszanych w ostatnich 3 s (działa też na żywo) | `prior` 1,3 / 1,6 | korpus: akordy 96,8 → 95,9 / 94,5 %; GuitarSet: nuty w akompaniamencie 35,5 → 34,5 %. System trzyma się starego akordu, gdy gracz zmienia chwyt |
+| dłuższe mostkowanie przerw | `release` 0,22 s | zbiory kontrolne: wynik mieszany (korpus: akordy −0,6, nuty +0,4 pkt; GuitarSet: akordy +0,7, nuty z końcem −0,5 pkt), zostaje 0,13 s |
+
+Wniosek: tam, gdzie nuta istnieje w widmie, historia jest już wykorzystana; brakujące nuty na prawdziwych nagraniach to głównie krótkie
+nuty rozmyte przez długie okno i ciche struny w akompaniamencie, których historia nie podpowiada.
+
+**Co poprawiło dokładność w poprzedniej rundzie** (zbiór kontrolny, względem wersji wcześniejszej):
 
 | zmiana | efekt |
 |---|---|
@@ -113,6 +284,20 @@ oktawowe lub struny wybrzmiewające szybciej niż okno analizy.
 node tools/wasm_run.js nagranie.wav wynik.json     # silnik z pliku .wasm w node (te same metryki co natywnie)
 node tools/test_exports.js nagranie.wav katalog    # eksporty: ZIP, WAV, MIDI, tabulatura, JSON
 node tools/ui_test.js katalog nagranie.wav         # Chromium (Playwright): demo, odtwarzanie, pobieranie, plik, mikrofon, tryb artefaktu
+# prawdziwe nagrania: GuitarSet (https://zenodo.org/records/3371780, annotation.zip + audio_mono-mic.zip), pip install mir_eval
+for f in mic/*.wav; do ./gt_cli analyze $f wyniki/$(basename $f _mic.wav).json; done
+python3 tools/guitarset_eval.py annotation wyniki --by-style
+# ponowne uczenie modelu (zrzuty cech + prawda; szczegóły w nagłówku tools/train_model.py)
+for f in korpus/*.wav; do GT_DUMP=zrzuty/$(basename $f .wav).bin ./gt_cli analyze $f /dev/null; done
+python3 tools/train_model.py --syn zrzuty korpus --gs zrzuty_gs annotation --out src/gt_model.hpp
+# gen 4: środowiska, maska i model nut
+g++ -std=c++17 -O2 tools/gen_env.cpp -o gen_env && ./gen_env env_train 100000 240 && ./gen_env env_test 900000 60
+for f in env_train/env_*[0-9].wav; do GT_DUMPM=zrzuty_maski/$(basename $f .wav).bin ./gt_cli analyze $f /dev/null; done
+# gen 5: zrzut wejścia HCQT i uczenie (PyTorch)
+for f in env_train/env_*[0-9].wav; do GT_DUMPH=hcqt/env/$(basename $f .wav).bin ./gt_cli analyze $f /dev/null; done
+python3 tools/train_gen5.py --src środowiska hcqt/env env_train 0.25 --src korpus hcqt/syn prawda 0.25 --src GuitarSet hcqt/gs annotation 0.5 --attn --resume
+python3 tools/train_mask.py --train env_train zrzuty_maski --test env_test zrzuty_maski_test
+python3 tools/train_model.py --env zrzuty_env env_train --syn ... --gs ... --ensemble 3 --weights "korpus=0.25,środowiska=0.25,GuitarSet=0.5"
 ```
 
 ## Układ kodu
@@ -127,7 +312,15 @@ node tools/ui_test.js katalog nagranie.wav         # Chromium (Playwright): demo
 | `src/gt_engine.hpp` | silnik: strumień → ramki, strój, próg, akordy, stroik |
 | `src/gt_fingering.hpp` | struny i progi, ograniczenia fizyczne ręki |
 | `src/gt_hand.hpp` | śledzenie ręki: filtr nut niemożliwych do zagrania, strefa ręki |
+| `src/gt_hcqt.hpp`, `src/gt_gen5.hpp`, `src/gt_gen5model.hpp` | gen 5: wejście HCQT, sieć z uwagą i dekoder nut, wagi (z `tools/train_gen5.py`) |
+| `src/gt_model.hpp` | wagi modelu nut gen 4 (generowane przez `tools/train_model.py`) |
+| `src/gt_mask.hpp`, `src/gt_maskmodel.hpp` | model maski: ile w każdym paśmie jest gitary (wagi z `tools/train_mask.py`) |
+| `tools/gen_env.cpp` | generator losowych środowisk (gitara + pokój + mikrofon + otoczenie, osobno sama gitara) |
 | `src/gt_export.hpp` | MIDI, WAV, ZIP, tabulatura, JSON |
 | `src/gt_synth.hpp` | syntezator szarpanej struny (odsłuch i korpus testowy) |
 | `src/wasm_api.cpp` | interfejs C dla przeglądarki |
 | `web/` | interfejs (HTML, CSS, JS) i skrypt składający plik |
+
+## Dalsze kierunki
+
+Przegląd metod i prac naukowych, które mogą poprawić wykrywanie dźwięków (z odniesieniami do kodu): [`docs/BADANIA.md`](docs/BADANIA.md).

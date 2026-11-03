@@ -2,7 +2,10 @@
 // widma + iteracyjne kasowanie) oraz YIN do stroika.
 #pragma once
 #include <cstdio>
+#include <map>
 #include "gt_spectrum.hpp"
+#include "gt_model.hpp"
+#include "gt_mask.hpp"
 
 namespace gt {
 
@@ -14,6 +17,7 @@ struct NoteDet {
   float score = 0;
   int nh = 0;       // ile z 6 pierwszych alikwotów znaleziono
   bool sustained = false; // nuta podtrzymana: wykryta z obniżonym progiem, bo już brzmiała
+  float conf = 1;      // pewność (model: prawdopodobieństwo; bez modelu 1)
   bool octave = false; // podwojenie oktawowe niższej nuty (wykryte po nadmiarze parzystych alikwotów)
 };
 
@@ -28,8 +32,16 @@ public:
     double relThr = 0.2;
     int maxNotes = 6;
     bool octaves = true;     // wykrywaj oktawowe podwojenia
+    bool learnB = true;      // ucz nieharmoniczność dla każdej wysokości
+    int learnMin = 12;       // od tylu pomiarów
+    double learnTol0 = 25, learnTol1 = 1.2;
+    bool joint = true;       // ocena łączna po wyborze zachłannym (poduktawy, nuty w całości wyjaśnione przez inne)
+    double jointSwap = 0.0;  // poduktawa -> oktawa wyżej, gdy jej własny wkład < tej części całości
+    double jointDrop = 0.12; // usuń nutę, gdy jej własny wkład < tej części całości
     double octRatio = 1.4;
     double octRatioMono = 2.2;
+    bool octModel = true;          // test oktaw z modelem miejsca szarpnięcia
+    double octModelThr = 1.4, octModelThrMono = 2.5;
   };
 
   void init(const Options& o, double a4) {
@@ -50,14 +62,17 @@ public:
       Cand c;
       c.m = m;
       c.f0 = midiFreq(m, a4);
+      const auto lb = learnedB_.find(m);
+      const double B = lb != learnedB_.end() ? lb->second : o_.B;
+      if (lb != learnedB_.end()) { c.tol0 = o_.learnTol0; c.tol1 = o_.learnTol1; }
       for (int h = 1; h <= o_.maxH; ++h) {
-        const double f = h * c.f0 * std::sqrt(1 + o_.B * h * h);
+        const double f = h * c.f0 * std::sqrt(1 + B * h * h);
         if (f > o_.fs * 0.5 * 0.92) break;
         c.hf.push_back((float)f);
         c.w.push_back((float)((c.f0 + 52) / (h * c.f0 + 320)));
       }
       for (int h = 1; h <= 40; ++h) {
-        const double f = h * c.f0 * std::sqrt(1 + o_.B * h * h);
+        const double f = h * c.f0 * std::sqrt(1 + B * h * h);
         if (f > 4800) break;
         c.all.push_back((float)f);
       }
@@ -66,6 +81,29 @@ public:
   }
 
   double a4() const { return a4_; }
+  std::vector<float> feat_, prevSal_, prevSal2_, prob_;
+  std::vector<uint8_t> prevChosen2_;
+  const BandMask* mask_ = nullptr;
+  bool dropMaskFeat_ = false; // test: model bez cech z maski
+  std::vector<uint8_t> featOk_, prevChosen_;
+  bool model_ = false;
+  double modelThr_ = 0.5;
+  std::vector<uint8_t> prior_;  // 1 = wysokość brzmiała niedawno
+  double priorBoost_ = 1.0;
+  void setPrior(const std::vector<int>& midis, double boost) {
+    prior_.assign(cands_.size(), 0); priorBoost_ = boost;
+    for (int m : midis) if (m >= o_.lo && m <= o_.hi) prior_[m - o_.lo] = 1;
+  }
+  double jointTol0_ = 18, jointTol1_ = 1.0, jointH1_ = 0.35;
+  void setOctModel(bool on, double thr, double mono) { o_.octModel = on; o_.octModelThr = thr; o_.octModelThrMono = mono; }
+  void setLearnB(bool on, double t0, double t1) {
+    if (on == o_.learnB && t0 == o_.learnTol0 && t1 == o_.learnTol1) return;
+    o_.learnB = on; o_.learnTol0 = t0; o_.learnTol1 = t1;
+    if (!on) { learnedB_.clear(); bSamples_.clear(); }
+    setA4(a4_);
+  }
+  void resetLearned() { learnedB_.clear(); bSamples_.clear(); setA4(a4_); }
+  void setJoint(bool j, double swap, double drop) { o_.joint = j; o_.jointSwap = swap; o_.jointDrop = drop; }
 #ifdef GT_DEBUG
   int dbgMidi_ = -1;
 #endif
@@ -87,8 +125,14 @@ public:
 
   void detect(const std::vector<Peak>& peaks, std::vector<NoteDet>& notes) {
     notes.clear();
+    if (pendingRebuild_) { pendingRebuild_ = false; setA4(a4_); }
     const int P = (int)peaks.size();
-    if (!P) return;
+    if (!P) {
+      prevSal2_ = prevSal_; prevChosen2_ = prevChosen_;
+      prevSal_.assign(cands_.size(), 0.f); prevChosen_.assign(cands_.size(), 0); featOk_.assign(cands_.size(), 0);
+      if (prevSal2_.size() != cands_.size()) { prevSal2_.assign(cands_.size(), 0.f); prevChosen2_.assign(cands_.size(), 0); }
+      return;
+    }
     double aMax = 0;
     for (const auto& p : peaks) aMax = std::max<double>(aMax, p.a);
     v_.assign(P, 0.0);
@@ -107,7 +151,7 @@ public:
         int m6 = 0, un = 0;
         bool h1un = false;
         for (size_t h = 0; h < c.hf.size(); ++h) {
-          const int pi = find(peaks, c.hf[h], 28 + 1.5 * h);
+          const int pi = find(peaks, c.hf[h], c.tol0 + c.tol1 * h);
           idx_[h] = pi;
           if (pi < 0) continue;
           const uint8_t e = expl_[pi];
@@ -120,7 +164,9 @@ public:
         if (dbgMidi_ == c.m) fprintf(stderr, "  [dbg] it=%d midi=%d f0=%.1f m6=%d un=%d h1un=%d sal=%.3f\n", it, c.m, c.f0, m6, un, (int)h1un, sal);
 #endif
         if (m6 < (c.f0 < 450 ? 3 : 2) || (un < 2 && !(h1un && m6 >= 3))) continue;
-        const double score = sal * (0.55 + 0.45 * m6 / std::min<size_t>(6, c.hf.size()));
+        double score = sal * (0.55 + 0.45 * m6 / std::min<size_t>(6, c.hf.size()));
+        // wysokość słyszana w ostatnich chwilach (prior z historii): system się jej spodziewa
+        if (!prior_.empty() && prior_[ci]) score *= priorBoost_;
         if (bestC < 0 || score > bestScore) {
           bestC = (int)ci; bestScore = score; bestM6 = m6;
           for (size_t h = 0; h < c.hf.size(); ++h) bestIdx_[h] = idx_[h];
@@ -150,7 +196,7 @@ public:
         expl_[pi] = 1;
       }
       for (size_t h = 0; h < c.all.size(); ++h) {
-        const int pi = find(peaks, c.all[h], 28 + 1.5 * h);
+        const int pi = find(peaks, c.all[h], c.tol0 + c.tol1 * h);
         if (pi >= 0) expl_[pi] = 1;
       }
       double fe = den > 0 ? num / den : c.f0;
@@ -159,7 +205,10 @@ public:
         if (std::fabs(dd) > 1e-9 * sw * sxx) {
           const double c1 = (sw * sxy - sx * sy) / dd, c0 = (sy - c1 * sx) / sw;
           const double B = c0 > 0 ? c1 / c0 : -1;
-          if (c0 > 0 && B > -2e-4 && B < 1.5e-3) fe = std::sqrt(c0);
+          if (c0 > 0 && B > -2e-4 && B < 1.5e-3) {
+            fe = std::sqrt(c0);
+            if (o_.learnB && np >= 5) learnB(c.m, B);
+          }
         }
       }
       NoteDet n;
@@ -167,9 +216,109 @@ public:
       n.amp = (float)std::sqrt(a2); n.score = (float)bestScore; n.nh = bestM6;
       notes.push_back(n);
     }
+    if (o_.joint && notes.size() >= 1) jointRevise(peaks, notes);
     if (o_.octaves) addOctaveDoubles(peaks, notes);
     std::sort(notes.begin(), notes.end(), [](const NoteDet& a, const NoteDet& b) { return a.midi < b.midi; });
+    computeFeatures(peaks, notes);
+    if (model_) applyModel(peaks, notes);
   }
+
+  // ---------------------------------------------------------------- cechy kandydatów dla modelu
+  // Dla każdej wysokości z co najmniej 2 z 6 pierwszych alikwotów: profil alikwotów, ich wyjaśnienie przez inne nuty, decyzja
+  // detektora zachłannego i jej sąsiedztwo (oktawy, kwinty), poprzednia klatka i informacja o uderzeniu. Wejście sieci w gt_model.hpp.
+  static constexpr int NF = 44;
+  struct FrameInfo { float onset = 0, sinceOnset = 1, level = 0; };
+  FrameInfo fi_;
+  void setFrameInfo(const FrameInfo& f) { fi_ = f; }
+  const std::vector<float>& features() const { return feat_; }
+  const std::vector<uint8_t>& featureOk() const { return featOk_; }
+  const std::vector<float>& probs() const { return prob_; }
+  int candMidi(size_t ci) const { return cands_[ci].m; }
+  size_t numCands() const { return cands_.size(); }
+  void setModel(bool on, double thr) { model_ = on; modelThr_ = thr; }
+  void setMask(const BandMask* m) { mask_ = m; }
+
+  void computeFeatures(const std::vector<Peak>& peaks, const std::vector<NoteDet>& notes) {
+    const size_t C = cands_.size();
+    const int P = (int)peaks.size();
+    feat_.assign(C * NF, 0.f); featOk_.assign(C, 0);
+    if ((int)prevSal_.size() != (int)C) { prevSal_.assign(C, 0.f); prevChosen_.assign(C, 0); }
+    if ((int)prevSal2_.size() != (int)C) { prevSal2_.assign(C, 0.f); prevChosen2_.assign(C, 0); }
+    std::vector<uint8_t> chosen(C, 0), oct(C, 0);
+    for (const auto& n : notes) if (n.midi >= o_.lo && n.midi <= o_.hi) { chosen[n.midi - o_.lo] = 1; if (n.octave) oct[n.midi - o_.lo] = 1; }
+    // ile wybranych nut wyjaśnia każdy pik
+    std::vector<uint8_t> cov(P, 0);
+    std::vector<std::vector<int>> matched(C);
+    for (size_t ci = 0; ci < C; ++ci) {
+      const Cand& c = cands_[ci];
+      matched[ci].assign(10, -1);
+      for (size_t h = 0; h < c.hf.size() && h < 10; ++h) matched[ci][h] = find(peaks, c.hf[h], c.tol0 + c.tol1 * h);
+      if (chosen[ci]) for (size_t h = 0; h < c.hf.size(); ++h) { const int pi = find(peaks, c.hf[h], c.tol0 + c.tol1 * h); if (pi >= 0 && cov[pi] < 255) ++cov[pi]; }
+    }
+    std::vector<float> sal(C, 0.f);
+    float smax = 1e-9f;
+    for (size_t ci = 0; ci < C; ++ci) {
+      const Cand& c = cands_[ci];
+      double s = 0; int m6 = 0;
+      for (size_t h = 0; h < c.hf.size() && h < 10; ++h) { const int pi = matched[ci][h]; if (pi < 0) continue; s += c.w[h] * v_[pi]; if (h < 6) ++m6; }
+      sal[ci] = (float)s; smax = std::max(smax, (float)s);
+      if (m6 >= 2) featOk_[ci] = 1;
+    }
+    std::vector<float> order(sal);
+    std::sort(order.begin(), order.end(), std::greater<float>());
+    int nCh = 0; for (size_t ci = 0; ci < C; ++ci) nCh += chosen[ci];
+    auto ch = [&](int ci) { return ci >= 0 && ci < (int)C ? (float)chosen[ci] : 0.f; };
+    for (size_t ci = 0; ci < C; ++ci) {
+      if (!featOk_[ci]) continue;
+      const Cand& c = cands_[ci];
+      float* f = &feat_[ci * NF];
+      int m6 = 0;
+      for (int h = 0; h < 10; ++h) {
+        const int pi = h < (int)c.hf.size() ? matched[ci][h] : -1;
+        f[h] = pi >= 0 ? (float)v_[pi] : 0.f;
+        if (h < 6) {
+          if (pi >= 0) ++m6;
+          f[10 + h] = pi >= 0 ? (float)std::min<int>(2, cov[pi] - (chosen[ci] ? 1 : 0)) * 0.5f : 0.f;
+        }
+      }
+      f[16] = sal[ci] / smax;
+      f[17] = m6 / 6.f;
+      f[18] = (float)chosen[ci];
+      f[19] = (float)oct[ci];
+      f[20] = (float)std::log2(c.f0 / 220.0);
+      const int i = (int)ci;
+      f[21] = ch(i - 12); f[22] = ch(i + 12); f[23] = ch(i - 19); f[24] = ch(i - 7);
+      f[25] = (float)prevChosen_[ci];
+      f[26] = prevSal_[ci];
+      f[27] = nCh / 6.f;
+      f[28] = fi_.onset; f[29] = fi_.sinceOnset; f[30] = fi_.level;
+      int rank = 0; while (rank < (int)order.size() && order[rank] > sal[ci]) ++rank;
+      f[31] = std::min(10, rank) / 10.f;
+      // model maski: czystość alikwotów (ile w ich pasmach gitary) i jej narastanie (początek nuty)
+      double mm = 0, md = 0; int nm = 0, nh = 0;
+      for (int h = 0; h < 8 && h < (int)c.hf.size(); ++h) {
+        const float mk = mask_ ? mask_->at(c.hf[h]) : 1.f;
+        if (h < 6) f[32 + h] = mk;
+        mm += mk; ++nm;
+        if (h < 4) md += mk - (mask_ ? mask_->prevAt(c.hf[h]) : 1.f);
+      }
+      for (int h = 0; h < 10 && h < (int)c.hf.size(); ++h) if (matched[ci][h] >= 0) ++nh;
+      f[38] = nm ? (float)(mm / nm) : 0.f;
+      f[39] = (float)(md / 4);
+      if (dropMaskFeat_) for (int k = 32; k <= 39; ++k) f[k] = 0.f;
+      f[40] = prevSal2_[ci];
+      f[41] = (float)prevChosen2_[ci];
+      f[42] = sal[ci] / smax - prevSal_[ci];
+      f[43] = nh / 10.f;
+    }
+    for (size_t ci = 0; ci < C; ++ci) {
+      prevSal2_[ci] = prevSal_[ci]; prevChosen2_[ci] = prevChosen_[ci];
+      prevSal_[ci] = sal[ci] / smax; prevChosen_[ci] = chosen[ci];
+    }
+  }
+
+  void applyModel(const std::vector<Peak>& peaks, std::vector<NoteDet>& notes);
+
 
   // Oktawowe podwojenie (np. E2 + E3): jego alikwoty pokrywają się z parzystymi alikwotami niższej nuty,
   // więc zwykłe kasowanie je ukrywa. Zdradza je nadmiar energii w parzystych alikwotach względem
@@ -192,13 +341,20 @@ public:
         a[h] = pi >= 0 ? peaks[pi].a : 0.f;
       }
       int votes = 0, tried = 0;
-      for (int k = 1; k <= 3; ++k) {
-        if (k == 1 && c.f0 < 110) continue;
-        if (a[2 * k - 1] <= 0 || a[2 * k + 1] <= 0 || a[2 * k] <= 0) continue;
-        ++tried;
-        if (a[2 * k] > thr * std::sqrt(a[2 * k - 1] * a[2 * k + 1])) ++votes;
+      bool yes = false;
+      double ex = 0;
+      if (o_.octModel && pluckExcess(peaks, notes, i, ex)) {
+        yes = ex > (n0 >= 2 ? o_.octModelThr : o_.octModelThrMono);
+      } else {
+        for (int k = 1; k <= 3; ++k) {
+          if (k == 1 && c.f0 < 110) continue;
+          if (a[2 * k - 1] <= 0 || a[2 * k + 1] <= 0 || a[2 * k] <= 0) continue;
+          ++tried;
+          if (a[2 * k] > thr * std::sqrt(a[2 * k - 1] * a[2 * k + 1])) ++votes;
+        }
+        yes = tried >= 2 && votes >= 2;
       }
-      if (tried >= 2 && votes >= 2) {
+      if (yes) {
         NoteDet n;
         n.midi = m2; n.f = base.f * 2; n.cents = base.cents;
         n.amp = a[2] * 0.5f; n.score = base.score * 0.3f; n.nh = 4; n.octave = true;
@@ -207,14 +363,176 @@ public:
     }
   }
 
+  // Model miejsca szarpnięcia (Traube i Smith 2000): struna szarpnięta w punkcie p (ułamek długości) ma alikwoty mnożone przez
+  // |sin(pi h p)|, więc przy p = 1/3 brakuje 3., 6., 9. alikwotu, przy p = 1/4 4. i 8. itd. Stary test oktaw zakładał gładką
+  // obwiednię i przy takiej "dziurze" w nieparzystym alikwocie dokładał fałszywą oktawę. Tu dopasowujemy p i nachylenie s
+  // do alikwotów NIEPARZYSTYCH (podwojenie oktawowe ich nie dotyka), przewidujemy parzyste i zwracamy medianę nadwyżki
+  // zmierzone/przewidziane. Alikwoty wspólne z innymi nutami zbioru pomijamy. false = za mało danych (użyj starego testu).
+  bool pluckExcess(const std::vector<Peak>& peaks, const std::vector<NoteDet>& notes, size_t bi, double& excess) const {
+    const NoteDet& base = notes[bi];
+    const Cand& c = cands_[base.midi - o_.lo];
+    const int H = std::min<int>(12, (int)c.hf.size());
+    if (H < 8) return false;
+    const double k = std::pow(2.0, base.cents / 1200.0);
+    double amin = 1e9, amax = 0;
+    for (const auto& p : peaks) { amin = std::min<double>(amin, p.a); amax = std::max<double>(amax, p.a); }
+    const double floor = 0.7 * amin;
+    double a[13] = {0};
+    bool shared[13] = {false};
+    for (int h = 1; h <= H; ++h) {
+      const double fh = c.hf[h - 1] * k;
+      const int pi = find(peaks, fh, 22 + 1.5 * h);
+      a[h] = pi >= 0 ? peaks[pi].a : 0.0;
+      for (size_t j = 0; j < notes.size() && !shared[h]; ++j) {
+        if (j == bi || notes[j].octave) continue;
+        const Cand& o = cands_[notes[j].midi - o_.lo];
+        const double ko = std::pow(2.0, notes[j].cents / 1200.0);
+        for (size_t q = 0; q < o.hf.size(); ++q)
+          if (std::fabs(1200 * std::log2(fh / (o.hf[q] * ko))) < 35) { shared[h] = true; break; }
+      }
+    }
+    int nOdd = 0;
+    for (int h = (c.f0 < 110 ? 3 : 1); h <= H; h += 2) if (!shared[h] && a[h] > 0) ++nOdd;
+    if (nOdd < 3) return false;
+    double best = 1e18, bp = 0, bs = 0, bA = 0;
+    for (double p = 0.05; p <= 0.351; p += 0.005) {
+      for (double sl = 0.6; sl <= 2.41; sl += 0.3) {
+        double sum = 0; int n = 0;
+        double r[13];
+        for (int h = (c.f0 < 110 ? 3 : 1); h <= H; h += 2) {
+          if (shared[h] || a[h] <= 0) continue;
+          r[h] = std::log(a[h]) - std::log(std::max(std::fabs(std::sin(kPi * h * p)), 0.01) / std::pow((double)h, sl));
+          sum += r[h]; ++n;
+        }
+        const double lA = sum / n;
+        double err = 0;
+        for (int h = (c.f0 < 110 ? 3 : 1); h <= H; h += 2) {
+          if (shared[h]) continue;
+          const double m = lA + std::log(std::max(std::fabs(std::sin(kPi * h * p)), 0.01) / std::pow((double)h, sl));
+          if (a[h] > 0) err += (r[h] - lA) * (r[h] - lA);
+          else if (m > std::log(floor)) err += (m - std::log(floor)) * (m - std::log(floor)); // model przewiduje pik, którego nie ma
+        }
+        if (err < best) { best = err; bp = p; bs = sl; bA = lA; }
+      }
+    }
+    if (best / nOdd > 0.35) return false; // model nie pasuje (np. silne rezonanse pudła): stary test
+    double ex[6]; int ne = 0;
+    for (int h = 2; h <= H && ne < 6; h += 2) {
+      if (shared[h]) continue;
+      const double pred = std::exp(bA) * std::max(std::fabs(std::sin(kPi * h * bp)), 0.01) / std::pow((double)h, bs);
+      if (pred < 3 * floor) continue; // przewidziana dziura: z tego alikwotu nic nie wiadomo
+      ex[ne++] = std::max(a[h], floor) / pred;
+    }
+    if (ne < 2) return false;
+    std::sort(ex, ex + ne);
+    excess = ne % 2 ? ex[ne / 2] : std::sqrt(ex[ne / 2 - 1] * ex[ne / 2]);
+    (void)amax;
+    return true;
+  }
+
+  // Ocena łączna (Klapuri 2006, Duan i in. 2010, Yeh i Röbel 2004): zachłanny wybór nie wraca do wybranych nut, więc
+  // poduktawa wybrana wcześnie (zbiera energię wszystkich alikwotów nuty o oktawę wyżej) zostaje. Tu dla każdej nuty liczymy
+  // jej własny wkład: salience pików, których nie wyjaśnia żadna inna nuta zbioru. Gdy po dodaniu nuty o oktawę wyżej
+  // poduktawa nie wnosi prawie nic własnego, zastępujemy ją tą oktawą; gdy nuta nie wnosi nic nawet bez tego, usuwamy ją.
+  void jointRevise(const std::vector<Peak>& peaks, std::vector<NoteDet>& notes) {
+    const int P = (int)peaks.size();
+    auto cover = [&](int midi, double cents, std::vector<uint8_t>& mark) {
+      if (midi < o_.lo || midi > o_.hi) return;
+      const Cand& c = cands_[midi - o_.lo];
+      const double k = std::pow(2.0, cents / 1200.0);
+      // tylko alikwoty z grzebienia (do 14.) i węższa tolerancja: gęste wysokie alikwoty niskich strun "wyjaśniałyby" wszystko
+      for (size_t h = 0; h < c.hf.size(); ++h) {
+        const int pi = find(peaks, c.hf[h] * k, jointTol0_ + jointTol1_ * h);
+        if (pi >= 0) mark[pi] = 1;
+      }
+    };
+    // własny wkład nuty i przy pikach oznaczonych w `other`
+    auto own = [&](const NoteDet& n, const std::vector<uint8_t>& other, double& tot) {
+      const Cand& c = cands_[n.midi - o_.lo];
+      const double k = std::pow(2.0, n.cents / 1200.0);
+      double u = 0; tot = 0;
+      for (size_t h = 0; h < c.hf.size(); ++h) {
+        const int pi = find(peaks, c.hf[h] * k, c.tol0 + c.tol1 * h);
+        if (pi < 0) continue;
+        const double s = c.w[h] * v_[pi];
+        tot += s;
+        if (!other[pi]) u += s;
+      }
+      return u;
+    };
+    std::vector<uint8_t> other(P);
+    bool changed = true;
+    for (int pass = 0; pass < 3 && changed; ++pass) {
+      changed = false;
+      for (size_t i = 0; i < notes.size(); ++i) {
+        std::fill(other.begin(), other.end(), 0);
+        for (size_t j = 0; j < notes.size(); ++j) if (j != i) cover(notes[j].midi, notes[j].cents, other);
+        double tot = 0;
+        const double u0 = own(notes[i], other, tot);
+        if (tot <= 0) continue;
+        const int up = notes[i].midi + 12;
+        bool upChosen = false;
+        for (const auto& q : notes) if (q.midi == up) upChosen = true;
+        if (!upChosen && up <= o_.hi) {
+          std::vector<uint8_t> o2 = other;
+          cover(up, notes[i].cents, o2);
+          const double u1 = own(notes[i], o2, tot);
+          // oktawa wyżej musi mieć własny pik podstawowy
+          const int f1 = find(peaks, cands_[up - o_.lo].hf[0] * std::pow(2.0, notes[i].cents / 1200.0), 28);
+          // podejrzana jest tylko poduktawa bez wyraźnego własnego tonu podstawowego (prawdziwy bas go ma)
+          const int h1 = find(peaks, cands_[notes[i].midi - o_.lo].hf[0] * std::pow(2.0, notes[i].cents / 1200.0), 28);
+          const double v1 = h1 >= 0 && !other[h1] ? v_[h1] : 0.0;
+          if (u1 < o_.jointSwap * tot && f1 >= 0 && v_[f1] > 0.3 && v1 < jointH1_) {
+#ifdef GT_DEBUG
+            if (std::getenv("GT_TRACE_JOINT")) fprintf(stderr, "JOINT swap %d -> %d (u1=%.3f tot=%.3f)\n", notes[i].midi, up, u1, tot);
+#endif
+            NoteDet& n = notes[i];
+            n.midi = up; n.f *= 2; n.nh = std::max(3, n.nh / 2);
+            changed = true;
+            continue;
+          }
+        }
+        // podwojenia oktawowe (ta sama klasa dźwięku niżej) z natury nie mają własnych alikwotów: o nich decyduje addOctaveDoubles
+        bool octOfLower = false;
+        for (const auto& q : notes) if (q.midi < notes[i].midi && (notes[i].midi - q.midi) % 12 == 0) octOfLower = true;
+        if (notes.size() > 1 && !octOfLower && u0 < o_.jointDrop * tot) {
+#ifdef GT_DEBUG
+          if (std::getenv("GT_TRACE_JOINT")) fprintf(stderr, "JOINT drop %d (u0=%.3f tot=%.3f)\n", notes[i].midi, u0, tot);
+#endif
+          notes.erase(notes.begin() + i);
+          changed = true;
+          break;
+        }
+      }
+    }
+  }
+
 private:
   struct Cand {
     int m = 0;
     double f0 = 0;
+    float tol0 = 28, tol1 = 1.5; // tolerancja dopasowania alikwotu [centy] = tol0 + tol1 * h
     std::vector<float> hf, w, all;
   };
   Options o_;
   double a4_ = 440;
+  std::map<int, double> learnedB_;            // zmierzona nieharmoniczność na wysokość
+  std::map<int, std::vector<float>> bSamples_;
+  bool pendingRebuild_ = false;
+
+  // Nieharmoniczność zależy od struny (Barbancho i in. 2012; Rigaud i in. 2013). Po zebraniu pomiarów dla danej wysokości
+  // grzebień tej wysokości dostaje własne B i węższą tolerancję, więc obce piki rzadziej się do niego "przyklejają".
+  void learnB(int m, double B) {
+    auto& v = bSamples_[m];
+    v.push_back((float)B);
+    if (v.size() > 41) v.erase(v.begin());
+    if (v.size() < (size_t)o_.learnMin || v.size() % 4) return;
+    std::vector<float> t = v;
+    std::nth_element(t.begin(), t.begin() + t.size() / 2, t.end());
+    const double med = std::max(0.0, (double)t[t.size() / 2]);
+    const auto it = learnedB_.find(m);
+    if (it == learnedB_.end() || std::fabs(med - it->second) > 0.15 * std::max(med, 5e-5)) { learnedB_[m] = med; pendingRebuild_ = true; }
+  }
   std::vector<Cand> cands_;
   std::vector<double> v_;
   std::vector<uint8_t> expl_, chosen_;
@@ -259,6 +577,50 @@ inline YinResult yin(const float* x, int n, double fs, double fmin = 70, double 
   res.f = fs / bt;
   res.prob = std::max(0.0, 1.0 - cm[tau]);
   return res;
+}
+
+// Wytrenowany model (tools/train_model.py, wagi w gt_model.hpp) ocenia każdą kandydującą wysokość; zostają te z p >= progu
+// (najwyżej maxNotes + 1). Nuty wybrane też przez detektor zachłanny zachowują jego dopasowanie (f, odchyłka), pozostałe
+// dostają częstotliwość ważoną z pików alikwotów.
+inline void MultiPitch::applyModel(const std::vector<Peak>& peaks, std::vector<NoteDet>& notes) {
+  const size_t C = cands_.size();
+  prob_.assign(C, 0.f);
+  if (!kModelReady) return;
+  struct Pick { size_t ci; float p; };
+  std::vector<Pick> picks;
+  for (size_t ci = 0; ci < C; ++ci) {
+    if (!featOk_[ci]) continue;
+    const float p = modelPredict(&feat_[ci * NF]);
+    prob_[ci] = p;
+    if (p >= modelThr_) picks.push_back({ci, p});
+  }
+  std::sort(picks.begin(), picks.end(), [](const Pick& a, const Pick& b) { return a.p > b.p; });
+  if ((int)picks.size() > o_.maxNotes + 1) picks.resize(o_.maxNotes + 1);
+  std::vector<NoteDet> out;
+  for (const auto& pk : picks) {
+    const Cand& c = cands_[pk.ci];
+    const NoteDet* old = nullptr;
+    for (const auto& n : notes) if (n.midi == c.m) old = &n;
+    if (old) { NoteDet n = *old; n.score = std::max(n.score, pk.p); n.conf = pk.p; out.push_back(n); continue; }
+    double num = 0, den = 0, a2 = 0;
+    int m6 = 0;
+    for (size_t h = 0; h < c.hf.size() && h < 8; ++h) {
+      const int pi = find(peaks, c.hf[h], c.tol0 + c.tol1 * h);
+      if (pi < 0) continue;
+      const double a = peaks[pi].a, hh = (double)(h + 1);
+      num += a * peaks[pi].f / (hh * std::sqrt(1 + o_.B * hh * hh)); den += a;
+      if (h < 4) a2 += a * a;
+      if (h < 6) ++m6;
+    }
+    NoteDet n;
+    n.midi = c.m; n.f = (float)(den > 0 ? num / den : c.f0); n.cents = (float)(1200 * std::log2(n.f / c.f0));
+    n.amp = (float)std::sqrt(a2); n.score = pk.p; n.nh = m6; n.conf = pk.p;
+    // oktawa innej wybranej nuty: oznaczona jak podwojenie oktawowe (stroik i wybór basu ją pomijają)
+    for (const auto& q : picks) if (cands_[q.ci].m == c.m - 12 || cands_[q.ci].m == c.m - 24) n.octave = true;
+    out.push_back(n);
+  }
+  std::sort(out.begin(), out.end(), [](const NoteDet& a, const NoteDet& b) { return a.midi < b.midi; });
+  notes.swap(out);
 }
 
 } // namespace gt

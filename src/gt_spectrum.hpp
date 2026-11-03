@@ -16,6 +16,8 @@ struct PeakOptions {
   double noiseK = 4.5;    // krotność lokalnego szumu
   double fmin = 60, fmax = 5000;
   double dynDb = 48;      // dynamika względem najsilniejszego piku
+  const std::vector<double>* tnoise = nullptr; // widmo szumu tła z wielu klatek (amplituda na bin) albo brak
+  double tK = 3.0;        // pik musi być tyle razy ponad szumem tła
 };
 
 class Spectrum {
@@ -62,7 +64,8 @@ public:
     cand_.clear();
     for (int k = k0; k < k1; ++k) {
       const double m = mag_[k];
-      if (m > mag_[k - 1] && m >= mag_[k + 1] && m > o.minAmp && m > o.noiseK * nf_[k]) {
+      if (m > mag_[k - 1] && m >= mag_[k + 1] && m > o.minAmp && m > o.noiseK * nf_[k] &&
+          (!o.tnoise || m > o.tK * (*o.tnoise)[k])) {
         const double a = std::log(mag_[k - 1] + 1e-12), b = std::log(m + 1e-12), c = std::log(mag_[k + 1] + 1e-12);
         const double den = a - 2 * b + c;
         const double d = den < 0 ? 0.5 * (a - c) / den : 0.0;
