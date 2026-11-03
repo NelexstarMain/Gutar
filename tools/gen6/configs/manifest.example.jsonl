@@ -1,0 +1,3 @@
+{"id": "nagranie_001", "audio": "audio/nagranie_001.wav", "annotation": "nuty/nagranie_001.csv", "format": "notes_csv", "split": "train", "group": "akustyczna"}
+{"id": "nagranie_002", "audio": "audio/nagranie_002.wav", "annotation": "midi/nagranie_002.mid", "format": "midi", "parser_options": {"string_from_channel": true}, "split": "val", "group": "elektryczna"}
+{"id": "nagranie_003", "audio": "audio/nagranie_003.wav", "annotation": "jams/nagranie_003.jams", "format": "jams", "split": "test", "group": "akustyczna", "has": ["onset", "frame", "offset"]}
