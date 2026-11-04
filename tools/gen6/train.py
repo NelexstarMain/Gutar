@@ -159,6 +159,16 @@ def train(cfg: Config, out, resume=False, examples=None, log=print, jobs=None, e
         log('wznowiono od epoki %d' % ep0)
         if extend:
             epochs, s0, ep_s0, since = ep0 + extend, step, ep0, 0
+            if cfg.train.select_source:  # inna miara wyboru niż w poprzedniej sesji: wynik wyjściowy liczymy od nowa
+                best = -1e9
+                if va:  # best.pt zmieni się tylko wtedy, gdy dostrojony model przebije model wejściowy
+                    with torch.no_grad():
+                        rows, groups, _ = evaluate_model(net, va, cfg)
+                    agg0 = M.aggregate(rows, [g.split(':')[0] for g in groups], micro=False)
+                    b0 = agg0.get(cfg.train.select_source, agg0['RAZEM']).get(cfg.train.select_metric, float('nan'))
+                    if not math.isnan(b0):
+                        best = b0
+                    log('stan wyjściowy przed dostrajaniem: %s=%.4f (%s)' % (cfg.train.select_metric, b0, cfg.train.select_source))
             total = s0 + extend * cfg.train.steps_per_epoch
             if extend_lr:
                 cfg.train.lr = extend_lr
@@ -245,7 +255,7 @@ def train(cfg: Config, out, resume=False, examples=None, log=print, jobs=None, e
                 rows, groups, _ = evaluate_model(net, va, cfg)
             agg = M.aggregate(rows, [g.split(':')[0] for g in groups], micro=False)
             rec['val'] = agg
-            score = agg['RAZEM'].get(cfg.train.select_metric, float('nan'))
+            score = agg.get(cfg.train.select_source or 'RAZEM', agg['RAZEM']).get(cfg.train.select_metric, float('nan'))
         else:
             score = -sum(acc.values())
         rec['score'] = score
@@ -265,7 +275,7 @@ def train(cfg: Config, out, resume=False, examples=None, log=print, jobs=None, e
             f.write(json.dumps(rec, ensure_ascii=False, default=float) + '\n')
         val_s = ''
         if va:
-            r = agg['RAZEM']
+            r = agg.get(cfg.train.select_source or 'RAZEM', agg['RAZEM'])
             val_s = '  [nuty F1 %.3f, początek+koniec %.3f, klatki %.3f]' % (r.get('note_F1', float('nan')), r.get('onoff_F1', float('nan')),
                                                                            r.get('frame_F1', float('nan')))
         lbl = ('/%d' % epochs) if not deadline or extend else ''

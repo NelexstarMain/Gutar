@@ -124,6 +124,7 @@ class TrainConfig:
     grad_clip: float = 1.0
     seed: int = 1
     select_metric: str = 'note_F1'  # metryka walidacji wybierająca najlepszą epokę
+    select_source: str = ''         # '' = średnia po wszystkich źródłach (RAZEM), inaczej tylko to źródło (np. 'piezo' przy dostrajaniu)
     early_stop: int = 8             # epok bez poprawy
     augment: dict = dc.field(default_factory=lambda: {'gain_db': 6.0, 'pitch_shift_bins': 0, 'noise': 0.0, 'spec_mask': 0.1})
     # augment może mieć też: tempo (np. 0.12 = ×1/1,12…×1,12, p_tempo), pitch_semis (±k półtonów, p_pitch; tabulatura wtedy nieznana)

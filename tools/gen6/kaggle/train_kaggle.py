@@ -105,6 +105,9 @@ def main():
         s = dict(s)
         if s.get('manifest'):
             s['manifest'] = s['manifest'].replace('{DANE}', data)
+            if '{PIEZO}' in s['manifest']:  # nagrania z piezo: zbiór danych z manifest_piezo.jsonl (make_manifest.py)
+                ph = sorted(glob.glob(INPUT + '/**/manifest_piezo.jsonl', recursive=True))
+                s['manifest'] = s['manifest'].replace('{PIEZO}', os.path.dirname(ph[0]) if ph else '/brak_piezo')
             if s['name'] == 'GuitarSet' and extra_gs:
                 s['manifest'] = extra_gs
             if not os.path.exists(s['manifest']):

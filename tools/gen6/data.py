@@ -157,9 +157,11 @@ def parse_notes_csv(path, onset='onset', offset='offset', pitch='pitch', velocit
             p = 69 + 12 * np.log2(p / 440.0)
         notes.append(Note(float(p), g(ci[0]), g(ci[1]) if g(ci[1]) is not None else g(ci[0]), g(ci[3]),
                           int(g(ci[4])) if g(ci[4]) is not None else None))
-    has = {'onset', 'frame'}
+    # same początki (brak kolumny końców albo końce <= początek): znamy tylko 'onset'. Etykieta 'brzmi' z nut o zerowej długości
+    # uczyłaby, że nuty kończą się natychmiast, więc 'frame' i 'offset' są wtedy nieznane (strata je pomija)
+    has = {'onset'}
     if ci[1] is not None and all(n.offset > n.onset for n in notes):
-        has.add('offset')
+        has |= {'frame', 'offset'}
     if notes and all(n.velocity is not None for n in notes):
         vm = velocity_max or (127.0 if max(n.velocity for n in notes) > 1 else 1.0)
         for n in notes:
