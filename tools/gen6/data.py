@@ -459,6 +459,52 @@ def precompute_features(examples, cfg: Config, jobs=None, log=print):
     return [e for e in examples if e.id in ok]
 
 
+def stretch(X, maps, t0, M, L):
+    """Zmiana tempa wycinka: M klatek źródła (od t0) -> L klatek. Cechy: interpolacja liniowa; brzmi / struna: najbliższa klatka;
+    początki, końce i głośność (rzadkie piki): przeniesienie do najbliższej klatki wyjścia z maksimum, żeby żaden początek nie zginął."""
+    n_out = L if M * 1.0 / L * (L - 1) < len(X) - t0 else max(1, int((len(X) - t0 - 1) * L / M) + 1)
+    pos = t0 + np.arange(n_out) * (M / L)
+    pos = np.minimum(pos, len(X) - 1)
+    i0 = np.floor(pos).astype(int); i1 = np.minimum(i0 + 1, len(X) - 1); w = (pos - i0).astype(np.float32)[:, None, None]
+    x = (np.asarray(X[i0], np.float32) * (1 - w) + np.asarray(X[i1], np.float32) * w).astype(np.float32)
+    near = np.minimum(np.round(pos).astype(int), len(X) - 1)
+    tg = {}
+    for key, v in maps.items():
+        if key in ('onset', 'offset', 'velocity', 'vel_mask'):
+            src = v[t0:t0 + M]
+            out = np.zeros((n_out,) + v.shape[1:], v.dtype)
+            j = np.minimum(np.round(np.arange(len(src)) * (L / M)).astype(int), n_out - 1)
+            np.maximum.at(out, j, src)
+            tg[key] = out
+        else:
+            tg[key] = v[near]
+    return x, tg
+
+
+def shift_pitch(x, tg, avail, k, bins_per_semi=3):
+    """Przesunięcie o k półtonów: cechy o k*bins_per_semi binów, mapy o k półtonów (brzegi zerami), tabulatura nieznana."""
+    b = k * bins_per_semi
+    xs = np.zeros_like(x)
+    if b > 0:
+        xs[:, :, b:] = x[:, :, :-b]
+    else:
+        xs[:, :, :b] = x[:, :, -b:]
+    out = {}
+    for key, v in tg.items():
+        if key == 'tab':
+            out[key] = np.full_like(v, -1)
+            continue
+        z = np.zeros_like(v)
+        if k > 0:
+            z[:, k:] = v[:, :-k]
+        else:
+            z[:, :k] = v[:, -k:]
+        out[key] = z
+    avail = avail.copy()
+    avail[4] = 0  # HEADS: onset, frame, offset, velocity, tab
+    return xs, out, avail
+
+
 class TrainSet:
     """Losowe wycinki z ważeniem źródeł. Każdy element: x [C, L, P], cele i maski z labels.make_targets, waga."""
 
@@ -489,9 +535,22 @@ class TrainSet:
         lens = np.array([len(self.items[k][1]) for k in idx], float)
         e, X, (maps, avail) = self.items[idx[rng.choice(len(idx), p=lens / lens.sum())]]  # dłuższe nagrania częściej
         T = len(X)
-        t0 = int(rng.integers(0, T - L + 1)) if T > L else 0
-        x = np.asarray(X[t0:t0 + L], np.float32)
-        tg = {k: v[t0:t0 + L] for k, v in maps.items()}
+        aug = self.cfg.train.augment
+        r = 1.0  # tempo: wycinek o długości L*r klatek źródła ściśnięty / rozciągnięty do L (r = 1,11 -> 11 % szybciej)
+        if aug.get('tempo') and rng.uniform() < aug.get('p_tempo', 0.5):
+            r = float(np.exp(rng.uniform(-np.log1p(aug['tempo']), np.log1p(aug['tempo']))))
+        M = max(1, min(T, int(round(L * r))))
+        t0 = int(rng.integers(0, T - M + 1)) if T > M else 0
+        if M == L or T <= L and r == 1.0:
+            x = np.asarray(X[t0:t0 + L], np.float32)
+            tg = {k: v[t0:t0 + L] for k, v in maps.items()}
+        else:
+            x, tg = stretch(X, maps, t0, M, L)
+        k = 0  # wysokość: przesunięcie o k półtonów (3k binów) cech i map; tabulatura traci sens -> nieznana
+        if aug.get('pitch_semis') and rng.uniform() < aug.get('p_pitch', 0.5):
+            k = int(rng.integers(-aug['pitch_semis'], aug['pitch_semis'] + 1))
+        if k:
+            x, tg, avail = shift_pitch(x, tg, avail, k, self.cfg.features.bins_per_semi)
         n = len(x)
         valid = np.r_[np.ones(n, np.float32), np.zeros(L - n, np.float32)]
         if n < L:

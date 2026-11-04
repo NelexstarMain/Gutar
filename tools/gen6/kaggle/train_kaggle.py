@@ -51,10 +51,12 @@ def main():
         import shutil
         src = a.continue_from
         if src == 'auto':
-            c = sorted(glob.glob('/kaggle/input/**/run/last.pt', recursive=True))
+            c = glob.glob('/kaggle/input/**/run/last.pt', recursive=True)
             if not c:
                 raise SystemExit('brak run/last.pt w /kaggle/input')
-            src = os.path.dirname(c[0])
+            # najdalej uczony stan (kolejne sesje: trening -> trening-dalej -> ...), nie pierwszy alfabetycznie
+            src = os.path.dirname(max(c, key=lambda f: torch.load(f, weights_only=False, map_location='cpu').get('step', 0)))
+            log('dalsze uczenie od', src)
         os.makedirs(a.out, exist_ok=True)
         for f in ('last.pt', 'best.pt', 'log.jsonl', 'train.log'):
             if os.path.exists(os.path.join(src, f)) and not os.path.exists(os.path.join(a.out, f)):
@@ -80,6 +82,22 @@ def main():
         if os.path.exists(os.path.join(gsd, 'manifest_guitarset.jsonl')):
             extra_gs = os.path.join(gsd, 'manifest_guitarset.jsonl')
     d = json.load(open(a.config))
+    # dodatkowe zestawy danych (notatniki gutar-gen6-dane2, ...): te same źródła, waga dzielona po równo między zestawy
+    more = [os.path.dirname(h) for h in sorted(glob.glob('/kaggle/input/**/manifest_klasyka.jsonl', recursive=True))
+            if os.path.dirname(h) != data] if not a.data else []
+    if more:
+        log('dodatkowe zestawy danych: %s' % ', '.join(more))
+        extra = []
+        for s in d['sources']:
+            if s['name'] == 'GuitarSet':
+                continue
+            n = 1 + len(more)
+            s['weight'] = s['weight'] / n
+            for k, m in enumerate(more):
+                c = dict(s, name='%s_%d' % (s['name'], k + 2), weight=s['weight'],
+                         manifest=s['manifest'].replace('{DANE}', m))
+                extra.append(c)
+        d['sources'] += extra
     srcs = []
     for s in d['sources']:
         s = dict(s)

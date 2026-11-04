@@ -174,3 +174,15 @@ sesji. Sesja 1 (stara wersja) szacowała liczbę epok z pierwszej epoki (1013 s,
 | razem (makro, 95 % przedział bootstrap) | | **84,8 % [83,8; 85,7]** |
 
 Najsłabiej: chór (55 %), kontrabas, wiolonczela i skrzypce (65–73 %), syntezator (70 %); najlepiej: ukulele, pizzicato, gitary (88–94 %).
+
+### Więcej danych (od sesji 3)
+
+* **Augmentacja tempa i wysokości** (`train.augment`: `tempo` 0,12, `p_tempo` 0,5, `pitch_semis` 2, `p_pitch` 0,3; `data.stretch`,
+  `data.shift_pitch`): wycinek źródła o długości L·r (r = 1/1,12…1,12) jest ściskany lub rozciągany do L klatek (cechy: interpolacja,
+  brzmi / struna: najbliższa klatka, początki / końce / głośność: przeniesienie pików, żaden początek nie ginie), a połowa z nich
+  dodatkowo przesuwana o ±1–2 półtony (cechy o 3 biny na półton, mapy o półton; tabulatura wtedy nieznana). Razem daje to też
+  „przyspieszoną taśmę” (tempo i wysokość naraz).
+* **Drugi zestaw nagrań** `gutar-gen6-dane2` (CPU, bez limitu GPU): `push.py dane2` = `prepare.py --seed-base 7 --env-seed 90000
+  --versions 3 --clips 1 --len 8 16 --only-train` (inne transpozycje, tempa, obsady, miejsca; trzy formy utworu; tylko train, bo
+  walidacja i test zostają z pierwszego zestawu, żeby wyniki były porównywalne). Uczenie: `push.py dalej --extra-data gutar-gen6-dane2`;
+  `train_kaggle.py` dzieli wagę źródła po równo między zestawy.

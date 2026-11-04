@@ -102,6 +102,9 @@ def main():
     ap.add_argument('--env', type=int, default=900, help='nagrań środowisk gitarowych gen 4')
     ap.add_argument('--no-guitarset', action='store_true')
     ap.add_argument('--no-classical', action='store_true', help='bez korpusu i nagrań klasycznych (np. sam GuitarSet)')
+    ap.add_argument('--seed-base', type=int, default=1, help='ziarno nagrań train (validation +1000, test +2000); inne = nowe nagrania')
+    ap.add_argument('--env-seed', type=int, default=50000, help='pierwsze ziarno środowisk gen_env')
+    ap.add_argument('--only-train', action='store_true', help='tylko zbiór train (dodatkowe dane; walidacja i test z pierwszego zestawu)')
     ap.add_argument('--jobs', type=int, default=os.cpu_count() or 4)
     ap.add_argument('--input', default='/kaggle/input', help='dane wejściowe bez internetu: korpus.zip, annotation.zip, '
                     'audio_mono-mic.zip (albo rozpakowane katalogi) gdziekolwiek pod tym katalogiem')
@@ -122,8 +125,8 @@ def main():
     sh('g++ -std=c++17 -O2 -pthread tools/gen_classical.cpp -o build/gen_classical')
     sh('g++ -std=c++17 -O2 tools/gen_env.cpp -o build/gen_env')
     # 3. nagrania klasyczne
-    seed = 1
-    for split in ('train', 'validation', 'test'):
+    seed = a.seed_base
+    for split in (('train',) if a.only_train else ('train', 'validation', 'test')):
         d = os.path.join(W, split)
         if not a.no_classical and not os.path.exists(os.path.join(d, 'index.csv')):
             v, c = (a.versions, a.clips) if split == 'train' else (a.val_versions, 1)
@@ -137,7 +140,7 @@ def main():
         if len(glob.glob(os.path.join(d, '*.truth.json'))) < a.env:
             os.makedirs(d, exist_ok=True)
             per = (a.env + a.jobs - 1) // a.jobs
-            procs = [subprocess.Popen(['./build/gen_env', d, str(50000 + k * per), str(min(per, a.env - k * per))], cwd=ROOT,
+            procs = [subprocess.Popen(['./build/gen_env', d, str(a.env_seed + k * per), str(min(per, a.env - k * per))], cwd=ROOT,
                                       stdout=subprocess.DEVNULL) for k in range(a.jobs) if a.env - k * per > 0]
             for p in procs:
                 p.wait()
@@ -173,7 +176,8 @@ def main():
             items.append(('klasyka', i, tp[:-11] + '.wav', tp, 'truth_json', sp, grp, t.get('piece')))
     for tp in sorted(glob.glob(os.path.join(W, 'env', '*.truth.json'))):
         i = os.path.basename(tp)[:-11]
-        items.append(('srodowiska', i, tp[:-11] + '.wav', tp, 'truth_json', 'val' if zlib.crc32(i.encode()) % 10 == 0 else 'train', 'env', None))
+        sp = 'train' if a.only_train else ('val' if zlib.crc32(i.encode()) % 10 == 0 else 'train')
+        items.append(('srodowiska', i, tp[:-11] + '.wav', tp, 'truth_json', sp, 'env', None))
     for jp in sorted(glob.glob(os.path.join(gs, 'annotation', '*.jams'))):
         i = os.path.basename(jp)[:-5]
         sp = 'test' if i[:3] in ('03_', '04_', '05_') else ('val' if i.startswith('02_Funk') else 'train')

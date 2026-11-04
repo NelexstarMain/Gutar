@@ -15,8 +15,8 @@ etap B <użytkownik>/gutar-guitarset-czesci (annotation.zip i audio_00..05.zip; 
 import argparse, base64, io, json, os, subprocess, sys, tarfile, tempfile
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
-SLUG = {'dane': 'gutar-gen6-dane', 'trening': 'gutar-gen6-trening', 'dalej': 'gutar-gen6-trening-dalej'}
-TITLE = {'dane': 'Gutar gen6 dane', 'trening': 'Gutar gen6 trening', 'dalej': 'Gutar gen6 trening dalej'}
+SLUG = {'dane': 'gutar-gen6-dane', 'dane2': 'gutar-gen6-dane2', 'trening': 'gutar-gen6-trening', 'dalej': 'gutar-gen6-trening-dalej'}
+TITLE = {'dane': 'Gutar gen6 dane', 'dane2': 'Gutar gen6 dane2', 'trening': 'Gutar gen6 trening', 'dalej': 'Gutar gen6 trening dalej'}
 
 STUB = r'''# Gitara Słuchacz, generacja 6: %(what)s (wygenerowane przez tools/gen6/kaggle/push.py)
 import base64, io, os, subprocess, sys, tarfile
@@ -44,7 +44,9 @@ def pack():
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('stage', choices=['dane', 'trening', 'dalej'])
+    ap.add_argument('stage', choices=['dane', 'dane2', 'trening', 'dalej'])
+    ap.add_argument('--extra-data', default='', help='dodatkowe notatniki z danymi dla uczenia, np. gutar-gen6-dane2')
+    ap.add_argument('--slug', help='inna nazwa notatnika (np. kolejna sesja dalej)')
     ap.add_argument('--user', default=os.environ.get('KAGGLE_USERNAME'))
     ap.add_argument('--args', default='')
     ap.add_argument('--accelerator', default='NvidiaTeslaT4')
@@ -56,23 +58,27 @@ def main():
         a.user = next((l.split(':', 1)[1].strip() for l in out.splitlines() if 'username' in l), None)
     if not a.user:
         sys.exit('podaj --user (nazwa konta Kaggle)')
-    script = 'tools/gen6/kaggle/prepare.py' if a.stage == 'dane' else 'tools/gen6/kaggle/train_kaggle.py'
+    script = 'tools/gen6/kaggle/prepare.py' if a.stage.startswith('dane') else 'tools/gen6/kaggle/train_kaggle.py'
+    if a.stage == 'dane2':  # dodatkowe nagrania: inne ziarna, tylko train (walidacja i test zostają z pierwszego zestawu)
+        a.args = ('--seed-base 7 --env-seed 90000 --versions 3 --clips 1 --len 8 16 --only-train --no-guitarset ' + a.args).strip()
     if a.stage == 'dalej':  # druga sesja: dalsze uczenie od last.pt z wyniku notatnika 'trening'
         a.args = ('--continue-from auto ' + a.args).strip()
     cmd = [script] + a.args.split()
     d = tempfile.mkdtemp(prefix='kaggle_' + a.stage + '_')
+    slug = a.slug or SLUG[a.stage]
     code = pack()
     open(os.path.join(d, 'run.py'), 'w').write(STUB % {'what': a.stage, 'code': code, 'cmd': cmd})
-    meta = {'id': '%s/%s' % (a.user, SLUG[a.stage]), 'title': TITLE[a.stage], 'code_file': 'run.py', 'language': 'python',
-            'kernel_type': 'script', 'is_private': True, 'enable_gpu': a.stage != 'dane', 'enable_tpu': False,
+    meta = {'id': '%s/%s' % (a.user, slug), 'title': TITLE.get(a.stage, slug) if not a.slug else slug.replace('-', ' '), 'code_file': 'run.py', 'language': 'python',
+            'kernel_type': 'script', 'is_private': True, 'enable_gpu': not a.stage.startswith('dane'), 'enable_tpu': False,
             'enable_internet': True,
-            'dataset_sources': ['%s/%s' % (a.user, ds) for ds in (a.korpus if a.stage == 'dane' else a.guitarset).split(',') if ds], 'competition_sources': [],
-            'kernel_sources': {'dane': [], 'trening': ['%s/%s' % (a.user, SLUG['dane'])],
-                               'dalej': ['%s/%s' % (a.user, SLUG['dane']), '%s/%s' % (a.user, SLUG['trening'])]}[a.stage]}
+            'dataset_sources': ['%s/%s' % (a.user, ds) for ds in (a.korpus if a.stage.startswith('dane') else a.guitarset).split(',') if ds], 'competition_sources': [],
+            'kernel_sources': {'dane': [], 'dane2': [], 'trening': ['%s/%s' % (a.user, SLUG['dane'])],
+                               'dalej': ['%s/%s' % (a.user, SLUG['dane']), '%s/%s' % (a.user, SLUG['trening'])]}[a.stage]
+                              + ['%s/%s' % (a.user, x) for x in a.extra_data.split(',') if x and not a.stage.startswith('dane')]}
     json.dump(meta, open(os.path.join(d, 'kernel-metadata.json'), 'w'), indent=1)
     print('kod: %.0f kB, katalog %s' % (len(code) / 1024, d))
     push = ['kaggle', 'kernels', 'push', '-p', d]
-    if a.stage != 'dane':
+    if not a.stage.startswith('dane'):
         push += ['--accelerator', a.accelerator]
     subprocess.run(push, check=True)
 

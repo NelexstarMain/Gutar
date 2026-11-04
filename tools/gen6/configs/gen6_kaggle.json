@@ -114,7 +114,11 @@
       "gain_db": 6.0,
       "pitch_shift_bins": 0,
       "noise": 0.01,
-      "spec_mask": 0.15
+      "spec_mask": 0.15,
+      "tempo": 0.12,
+      "p_tempo": 0.5,
+      "pitch_semis": 2,
+      "p_pitch": 0.3
     },
     "cache_dir": null,
     "workers": 4,
