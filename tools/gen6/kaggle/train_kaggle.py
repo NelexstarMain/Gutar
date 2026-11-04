@@ -12,9 +12,11 @@ import argparse, glob, json, os, sys, time
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
 sys.path.insert(0, ROOT)
 T0 = time.time()
+INPUT = os.environ.get('GUTAR_INPUT', '/kaggle/input')  # katalog z wejściami notatnika (zbiory danych, wyniki innych notatników)
 
 
-def find_data(start='/kaggle/input'):
+def find_data(start=None):
+    start = start or INPUT
     hits = sorted(glob.glob(os.path.join(start, '**', 'manifest_klasyka.jsonl'), recursive=True))
     if not hits:
         raise SystemExit('nie znaleziono manifest_klasyka.jsonl w %s (najpierw etap A: prepare.py)' % start)
@@ -41,9 +43,16 @@ def main():
     from tools.gen6.data import load_sources
     from tools.gen6.model import Gen6
 
+    os.makedirs(a.out, exist_ok=True)
+    logf = open(os.path.join(a.out, 'train.log'), 'a')
+
+    def log(*m):
+        s = '[%6.0f s] ' % (time.time() - T0) + ' '.join(str(x) for x in m)
+        print(s, flush=True); logf.write(s + '\n'); logf.flush()
+
     data = a.data or find_data()
     extra_gs = None
-    hits = sorted(glob.glob('/kaggle/input/**/dane_gs/manifest_guitarset.jsonl', recursive=True))
+    hits = sorted(glob.glob(INPUT + '/**/dane_gs/manifest_guitarset.jsonl', recursive=True))
     if hits:  # cechy GuitarSet z poprzedniej sesji (wynik notatnika uczenia)
         extra_gs = hits[0]
     resume = a.resume
@@ -51,7 +60,7 @@ def main():
         import shutil
         src = a.continue_from
         if src == 'auto':
-            c = glob.glob('/kaggle/input/**/run/last.pt', recursive=True)
+            c = glob.glob(INPUT + '/**/run/last.pt', recursive=True)
             if not c:
                 raise SystemExit('brak run/last.pt w /kaggle/input')
             # najdalej uczony stan (kolejne sesje: trening -> trening-dalej -> ...), nie pierwszy alfabetycznie
@@ -62,13 +71,6 @@ def main():
             if os.path.exists(os.path.join(src, f)) and not os.path.exists(os.path.join(a.out, f)):
                 shutil.copy(os.path.join(src, f), os.path.join(a.out, f))
         resume = True
-    os.makedirs(a.out, exist_ok=True)
-    logf = open(os.path.join(a.out, 'train.log'), 'a')
-
-    def log(*m):
-        s = '[%6.0f s] ' % (time.time() - T0) + ' '.join(str(x) for x in m)
-        print(s, flush=True); logf.write(s + '\n'); logf.flush()
-
     # GuitarSet dołączony do etapu B, a nie do A: cechy liczone tutaj (ok. 10 min na CPU)
     # (z dołączonego zbioru danych albo pobrany z zenodo, gdy notatnik ma internet; bez obu uczenie idzie bez GuitarSet)
     if not extra_gs and not os.path.exists(os.path.join(data, 'manifest_guitarset.jsonl')) and not a.no_guitarset:
@@ -83,7 +85,7 @@ def main():
             extra_gs = os.path.join(gsd, 'manifest_guitarset.jsonl')
     d = json.load(open(a.config))
     # dodatkowe zestawy danych (notatniki gutar-gen6-dane2, ...): te same źródła, waga dzielona po równo między zestawy
-    more = [os.path.dirname(h) for h in sorted(glob.glob('/kaggle/input/**/manifest_klasyka.jsonl', recursive=True))
+    more = [os.path.dirname(h) for h in sorted(glob.glob(INPUT + '/**/manifest_klasyka.jsonl', recursive=True))
             if os.path.dirname(h) != data] if not a.data else []
     if more:
         log('dodatkowe zestawy danych: %s' % ', '.join(more))
@@ -127,7 +129,11 @@ def main():
     log('uczenie zakończone %s (termin %s)' % (fmt_clock(time.time()), fmt_clock(deadline)))
 
     # ocena końcowa najlepszej epoki na zbiorach testowych (utwory / gracze, których model nie widział)
-    st = torch.load(os.path.join(a.out, 'best.pt'), weights_only=False, map_location='cpu')
+    ck = os.path.join(a.out, 'best.pt')
+    if not os.path.exists(ck):  # nic nie przebiło wyniku z poprzedniej sesji i best.pt nie został skopiowany: ostatni stan
+        log('brak best.pt, ocena ostatniego stanu')
+        ck = os.path.join(a.out, 'last.pt')
+    st = torch.load(ck, weights_only=False, map_location='cpu')
     net = Gen6(Config.from_dict(st['config']))
     net.load_state_dict(st['net'])
     if torch.cuda.is_available():
