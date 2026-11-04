@@ -155,7 +155,7 @@ def train(cfg: Config, out, resume=False, examples=None, log=print, jobs=None, e
         ep0, step, best, since = st['epoch'] + 1, st['step'], st['best'], st['since']
         epochs = st.get('epochs', epochs); s0, ep_s0 = st.get('s0', 0), st.get('ep_s0', 0)
         total = s0 + (epochs - ep_s0) * cfg.train.steps_per_epoch
-        rng = st['rng']; ds.rng = rng; torch.set_rng_state(st['trng'])
+        rng = st['rng']; ds.rng = rng; torch.set_rng_state(st['trng'].cpu().to(torch.uint8))
         log('wznowiono od epoki %d' % ep0)
         if extend:
             epochs, s0, ep_s0, since = ep0 + extend, step, ep0, 0
