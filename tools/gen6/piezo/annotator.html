@@ -32,7 +32,7 @@ kbd{border:1px solid var(--bd);border-radius:4px;padding:0 5px;background:var(--
   <label class="btn">Wczytaj opis (CSV)<input id="fCsv" type="file" accept=".csv,.tsv,.txt"></label>
   <button id="bPlay" class="main" disabled>▶ Odtwórz (spacja)</button>
   <select id="rate" title="Prędkość odtwarzania"><option value="1">1×</option><option value="0.75">0,75×</option><option value="0.5">0,5×</option></select>
-  <label class="chk"><input id="cBeep" type="checkbox" checked> słychać zaznaczone nuty</label>
+  <label class="chk" title="0 % = tylko nagranie, 100 % = tylko dźwięk nut z opisu"><span id="mixL">nagranie</span><input id="mix" type="range" min="0" max="100" value="50" style="width:130px"><span id="mixR">nuty</span><span id="mixV" style="min-width:5.5em"></span></label>
   <label class="chk"><input id="cOn" type="checkbox"> tylko początki (bez końców)</label>
   <button id="bMinus" title="Oddal">−</button><button id="bPlus" title="Przybliż">+</button>
   <button id="bCsv" disabled>2. Zapisz CSV</button>
@@ -48,6 +48,7 @@ kbd{border:1px solid var(--bd);border-radius:4px;padding:0 5px;background:var(--
   <p><b>Dodaj nutę:</b> wciśnij na pustym miejscu i przeciągnij w prawo (początek = gdzie wcisnąłeś, koniec = gdzie puścisz). Samo kliknięcie daje nutę 0,25 s.
   <b>Przesuń:</b> przeciągnij nutę. <b>Zmień koniec:</b> przeciągnij jej prawą krawędź. <b>Usuń:</b> zaznacz i wciśnij <kbd>Delete</kbd>.
   <b>Przewijanie:</b> suwak nad widmem, albo kółko myszy. <b>Przybliżanie:</b> <kbd>Ctrl</kbd> + kółko albo +/−. <b>Przewiń odtwarzanie:</b> kliknij pasek czasu u góry.</p>
+  <p><b>Suwak „nagranie / nuty”:</b> ile słychać oryginału, a ile dźwięku nut z opisu (0 % = tylko nagranie, 100 % = tylko nuty). Przy 50/50 łatwo usłyszeć, czy nuty pokrywają się z nagraniem. Działa też w trakcie odtwarzania.</p>
   <p>Klawisze: <kbd>Spacja</kbd> odtwarzanie, <kbd>Delete</kbd> usuń, <kbd>↑</kbd><kbd>↓</kbd> wysokość zaznaczonej nuty, <kbd>←</kbd><kbd>→</kbd> przesunięcie o 10 ms (z <kbd>Shift</kbd> o 50 ms), <kbd>Ctrl+Z</kbd> cofnij.</p>
   <p>Wysokość to numer MIDI (E2 = 40 to najniższa struna gitary). Wersję roboczą strona zapamiętuje w przeglądarce, ale na koniec zawsze zapisz CSV.
   Tryb „tylko początki” zapisuje bez kolumny końców: model uczy się wtedy tylko początków nut. Z końcami uczy się lepiej.
@@ -257,6 +258,21 @@ addEventListener('keydown', e => {
 
 // ---------------------------------------------------------------- odtwarzanie
 let raf = 0, beeps = [];
+// suwak miksu: 0 = tylko nagranie, 100 = tylko dźwięk nut; równa moc, więc przy 50 % obie części brzmią tak samo głośno
+function gains() {
+  if (!actx) return null;
+  if (!S.gRec) { S.gRec = actx.createGain(); S.gNote = actx.createGain(); S.gRec.connect(actx.destination); S.gNote.connect(actx.destination); }
+  return S;
+}
+function applyMix() {
+  const v = $('mix').value / 100;
+  $('mixV').textContent = Math.round((1 - v) * 100) + ' / ' + Math.round(v * 100) + ' %';
+  if (!gains()) return;
+  const t = actx.currentTime;
+  S.gRec.gain.setTargetAtTime(Math.cos(v * Math.PI / 2), t, 0.01);
+  S.gNote.gain.setTargetAtTime(Math.sin(v * Math.PI / 2) * 2.5, t, 0.01);  // 2,5: pojedyncze sygnały są cichsze niż nagranie
+}
+$('mix').oninput = applyMix; applyMix();
 function stopPlay() {
   if (S.play) { try { S.play.src.stop(); } catch (e) {} S.play = null; }
   beeps.forEach(o => { try { o.stop(); } catch (e) {} }); beeps = []; cancelAnimationFrame(raf); $('bPlay').textContent = '▶ Odtwórz (spacja)';
@@ -265,17 +281,17 @@ function play(restart) {
   if (!S.buf) return; if (restart) stopPlay();
   actx.resume();
   const rate = parseFloat($('rate').value), src = actx.createBufferSource();
-  src.buffer = S.buf; src.playbackRate.value = rate; src.connect(actx.destination);
+  gains(); applyMix(); src.buffer = S.buf; src.playbackRate.value = rate; src.connect(S.gRec);
   const start = S.cursor >= S.dur - 0.05 ? 0 : S.cursor, t0 = actx.currentTime + 0.05;
   src.start(t0, start); src.onended = () => { if (S.play && S.play.src === src) { stopPlay(); } };
   S.play = {src, start, t0, rate};
-  if ($('cBeep').checked) {
+  {
     for (const n of S.notes) {
       if (n.on < start) continue;
       const o = actx.createOscillator(), gn = actx.createGain(), ts = t0 + (n.on - start) / rate, dur = Math.min(0.5, n.off - n.on) / rate;
       o.type = 'triangle'; o.frequency.value = 440 * Math.pow(2, (n.p - 69) / 12);
       gn.gain.setValueAtTime(0, ts); gn.gain.linearRampToValueAtTime(0.12, ts + 0.01); gn.gain.exponentialRampToValueAtTime(0.001, ts + dur);
-      o.connect(gn); gn.connect(actx.destination); o.start(ts); o.stop(ts + dur + 0.02); beeps.push(o);
+      o.connect(gn); gn.connect(S.gNote); o.start(ts); o.stop(ts + dur + 0.02); beeps.push(o);
     }
   }
   $('bPlay').textContent = '⏸ Stop (spacja)';
