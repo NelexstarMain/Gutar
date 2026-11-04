@@ -283,7 +283,7 @@ def train(cfg: Config, out, resume=False, examples=None, log=print, jobs=None, e
                                                               cfg.train.select_metric, score, ' *' if improved else '', val_s,
                                                               time.time() - t_start))
         ep += 1
-        if since >= cfg.train.early_stop:
+        if since >= cfg.train.early_stop and not deadline:  # z terminem: harmonogram lr jest liczony od czasu, więc kończy dopiero termin
             log('brak poprawy od %d epok, koniec' % since)
             break
     if pf:

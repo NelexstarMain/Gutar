@@ -47,6 +47,7 @@ def main():
     ap.add_argument('stage', choices=['dane', 'dane2', 'trening', 'dalej', 'piezo'])
     ap.add_argument('--extra-data', default='', help='dodatkowe notatniki z danymi dla uczenia, np. gutar-gen6-dane2')
     ap.add_argument('--piezo-ds', default='gutar-piezo', help='dostrajanie: zbiór danych z nagraniami piezo, opisami i manifest_piezo.jsonl')
+    ap.add_argument('--from-kernel', default='', help="dalej: notatnik, z którego wznawiamy (domyślnie gutar-gen6-trening), np. gutar-gen6-trening-3")
     ap.add_argument('--pretrained', default='gutar-gen6-trening-3', help='dostrajanie: notatnik z wstępnie nauczonym modelem (run/last.pt)')
     ap.add_argument('--slug', help='inna nazwa notatnika (np. kolejna sesja dalej)')
     ap.add_argument('--user', default=os.environ.get('KAGGLE_USERNAME'))
@@ -77,7 +78,7 @@ def main():
             'enable_internet': True,
             'dataset_sources': ['%s/%s' % (a.user, ds) for ds in ((a.piezo_ds if a.stage == 'piezo' else a.korpus) if a.stage.startswith('dane') or a.stage == 'piezo' else a.guitarset).split(',') if ds], 'competition_sources': [],
             'kernel_sources': {'dane': [], 'dane2': [], 'trening': ['%s/%s' % (a.user, SLUG['dane'])],
-                               'dalej': ['%s/%s' % (a.user, SLUG['dane']), '%s/%s' % (a.user, SLUG['trening'])],
+                               'dalej': ['%s/%s' % (a.user, SLUG['dane']), '%s/%s' % (a.user, a.from_kernel or SLUG['trening'])],
                                'piezo': ['%s/%s' % (a.user, SLUG['dane']), '%s/%s' % (a.user, a.pretrained)]}[a.stage]
                               + ['%s/%s' % (a.user, x) for x in a.extra_data.split(',') if x and not a.stage.startswith('dane')]}
     json.dump(meta, open(os.path.join(d, 'kernel-metadata.json'), 'w'), indent=1)
