@@ -186,3 +186,7 @@ Najsłabiej: chór (55 %), kontrabas, wiolonczela i skrzypce (65–73 %), syntez
   --versions 3 --clips 1 --len 8 16 --only-train` (inne transpozycje, tempa, obsady, miejsca; trzy formy utworu; tylko train, bo
   walidacja i test zostają z pierwszego zestawu, żeby wyniki były porównywalne). Uczenie: `push.py dalej --extra-data gutar-gen6-dane2`;
   `train_kaggle.py` dzieli wagę źródła po równo między zestawy.
+* **Mniej idealne dane** (`train.augment`, od sesji 3): `noise` 0,02 (szum w cechach), `pitch_shift_bins` 1 z `p_detune` 0,3
+  (rozstrojenie: cechy o ±1 bin = ±33 centy, etykiety bez zmian), `label_jitter_frames` 1 z `p_jitter` 0,3 (początki i końce każdej
+  wysokości przesunięte o ±1 klatkę = ±23 ms, jak przy ręcznej adnotacji). Wpływu na wynik nie mierzyłem; jitter może minimalnie
+  rozmywać początki, więc przy spadku `onoff_F1` wyłączyć go ustawiając `label_jitter_frames` na 0.

@@ -546,6 +546,34 @@ class TrainSet:
             tg = {k: v[t0:t0 + L] for k, v in maps.items()}
         else:
             x, tg = stretch(X, maps, t0, M, L)
+        # rozstrojenie: cechy przesunięte o d binów (1 bin = 1/3 półtonu = 33 centy), etykiety bez zmian
+        nb = int(aug.get('pitch_shift_bins', 0) or 0)
+        if nb and rng.uniform() < aug.get('p_detune', 0.3):
+            d = int(rng.integers(-nb, nb + 1))
+            if d:
+                xs = np.zeros_like(x)
+                if d > 0:
+                    xs[:, :, d:] = x[:, :, :-d]
+                else:
+                    xs[:, :, :d] = x[:, :, -d:]
+                x = xs
+        # niedokładne etykiety: początki i końce każdej wysokości przesunięte o -j..j klatek (jak przy ręcznej adnotacji)
+        nj = int(aug.get('label_jitter_frames', 0) or 0)
+        if nj and rng.uniform() < aug.get('p_jitter', 0.3):
+            tg = dict(tg)
+            for key in ('onset', 'offset'):
+                m = tg[key]
+                out = np.zeros_like(m)
+                for sidx in np.where(m.max(axis=0) > 0)[0]:
+                    d = int(rng.integers(-nj, nj + 1))
+                    col = m[:, sidx]
+                    if d > 0:
+                        out[d:, sidx] = col[:-d]
+                    elif d < 0:
+                        out[:d, sidx] = col[-d:]
+                    else:
+                        out[:, sidx] = col
+                tg[key] = out
         k = 0  # wysokość: przesunięcie o k półtonów (3k binów) cech i map; tabulatura traci sens -> nieznana
         if aug.get('pitch_semis') and rng.uniform() < aug.get('p_pitch', 0.5):
             k = int(rng.integers(-aug['pitch_semis'], aug['pitch_semis'] + 1))

@@ -112,13 +112,16 @@
     "early_stop": 12,
     "augment": {
       "gain_db": 6.0,
-      "pitch_shift_bins": 0,
-      "noise": 0.01,
+      "pitch_shift_bins": 1,
+      "noise": 0.02,
       "spec_mask": 0.15,
       "tempo": 0.12,
       "p_tempo": 0.5,
       "pitch_semis": 2,
-      "p_pitch": 0.3
+      "p_pitch": 0.3,
+      "p_detune": 0.3,
+      "label_jitter_frames": 1,
+      "p_jitter": 0.3
     },
     "cache_dir": null,
     "workers": 4,
