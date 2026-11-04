@@ -25,10 +25,12 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--data'); ap.add_argument('--out', default='/kaggle/working/run')
     ap.add_argument('--config', default=os.path.join(ROOT, 'tools/gen6/configs/gen6_kaggle.json'))
-    ap.add_argument('--hours', type=float, default=11.0); ap.add_argument('--eval-hours', type=float, default=0.6)
+    ap.add_argument('--hours', type=float, default=11.5, help='cała sesja od startu skryptu (limit Kaggle: 12 h)')
+    ap.add_argument('--eval-hours', type=float, default=0.45, help='zapas na ocenę testową (zmierzona: ok. 16 min na 700 nagrań)')
+    ap.add_argument('--margin-min', type=float, default=15, help='zapas na zapis wyniku notatnika [min]')
     ap.add_argument('--no-guitarset', action='store_true', help='nie dokładaj GuitarSet w etapie B')
     ap.add_argument('--continue-from', help="dalsze uczenie: katalog z last.pt (np. wynik poprzedniej sesji w /kaggle/input); 'auto' = szukaj")
-    ap.add_argument('--extend', type=int, default=40, help='z --continue-from: najwyżej tyle epok więcej (budżet czasu przycina)')
+    ap.add_argument('--extend', type=int, default=1000, help='z --continue-from: najwyżej tyle epok więcej; w praktyce decyduje termin sesji')
     ap.add_argument('--extend-lr', type=float, default=4e-4, help='z --continue-from: szczyt lr nowego cyklu')
     ap.add_argument('--resume', action='store_true'); ap.add_argument('--epochs', type=int); ap.add_argument('--steps', type=int)
     a = ap.parse_args()
@@ -92,13 +94,19 @@ def main():
     cfg = Config.from_dict(d)
     if a.epochs: cfg.train.epochs = a.epochs
     if a.steps: cfg.train.steps_per_epoch = a.steps
-    budget = a.hours * 3600 - (time.time() - T0) - a.eval_hours * 3600 - 300  # wczytanie danych liczone w budżecie z zapasem
-    cfg.train.time_budget_sec = max(600.0, budget)
-    log('dane: %s, GPU: %s, budżet uczenia %.1f h' % (data, torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'brak',
-                                                    cfg.train.time_budget_sec / 3600))
+    # twardy termin liczony od startu skryptu (T0), a nie szacowany z pierwszej epoki: pierwsza epoka bywa wolniejsza
+    # (start GPU, pamięć podręczna dysku), a z niej sesja 1 wyliczyła 36 epok i skończyła ok. 3 h przed czasem
+    end_session = T0 + a.hours * 3600
+    deadline = end_session - a.eval_hours * 3600 - a.margin_min * 60
+    cfg.train.time_budget_sec = 0
+    from tools.gen6.train import fmt_clock
+    log('start sesji %s; koniec uczenia %s; ocena testowa do %s; limit sesji %s' % (
+        fmt_clock(T0), fmt_clock(deadline), fmt_clock(end_session - a.margin_min * 60), fmt_clock(end_session)))
+    log('dane: %s, GPU: %s' % (data, torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'brak'))
     exs = load_sources(cfg)
     T.train(cfg, a.out, resume, examples=exs, log=log, extend=a.extend if a.continue_from else 0,
-            extend_lr=a.extend_lr if a.continue_from else None)
+            extend_lr=a.extend_lr if a.continue_from else None, deadline=deadline)
+    log('uczenie zakończone %s (termin %s)' % (fmt_clock(time.time()), fmt_clock(deadline)))
 
     # ocena końcowa najlepszej epoki na zbiorach testowych (utwory / gracze, których model nie widział)
     st = torch.load(os.path.join(a.out, 'best.pt'), weights_only=False, map_location='cpu')
@@ -108,6 +116,11 @@ def main():
         net = net.cuda()
     te = [e for e in exs if e.split == 'test']
     log('ocena testowa: %d nagrań, najlepsza epoka %d (walidacja %.4f)' % (len(te), st['epoch'], st['score']))
+    left = end_session - a.margin_min * 60 - time.time()
+    if te and left < 600:  # za mało czasu na pełną ocenę: próba, żeby sesja nie została ucięta przed zapisem wyniku
+        k = max(20, int(len(te) * left / (a.eval_hours * 3600)))
+        log('mało czasu (%.0f s): ocena na próbie %d nagrań' % (left, k))
+        te = te[::max(1, len(te) // k)]
     if te:
         with torch.no_grad():
             rows, groups, ids = evaluate_model(net, te, cfg)

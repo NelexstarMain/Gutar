@@ -155,5 +155,22 @@ Notatnik na koncie bez weryfikacji telefonem nie ma internetu, dlatego wejścia 
 **Druga sesja (dalsze uczenie).** Jedna sesja Kaggle trwa najwyżej 12 h, więc przy tygodniowym limicie ok. 30 h GPU uczenie
 można przedłużyć: `python3 tools/gen6/kaggle/push.py dalej` (notatnik `gutar-gen6-trening-dalej`, wejścia: dane z etapu A i wynik
 notatnika `gutar-gen6-trening`). Kopiuje `run/last.pt`, `best.pt` i dziennik, bierze cechy GuitarSet z poprzedniej sesji
-i uczy dalej do 40 epok z nowym cyklem lr (ciepły restart, szczyt 4e-4; `--extend`, `--extend-lr`); budżet czasu znowu przycina
-liczbę epok. `best.pt` zmienia się tylko, gdy walidacja przebije najlepszy wynik z pierwszej sesji.
+i uczy dalej z nowym cyklem lr (ciepły restart, szczyt 4e-4; `--extend-lr`) aż do terminu sesji. `best.pt` zmienia się tylko, gdy walidacja przebije najlepszy wynik z pierwszej sesji.
+
+**Pilnowanie czasu sesji.** Termin jest twardy i liczony od startu skryptu: `--hours` (domyślnie 11,5 h, limit Kaggle 12 h) minus
+`--eval-hours` (0,45 h na ocenę testową; zmierzona 16 min na 700 nagrań) minus `--margin-min` (15 min na zapis wyniku). Zegar jest
+sprawdzany w każdym kroku, harmonogram lr (kosinus) liczony od ułamka czasu, więc kończy się dokładnie w terminie bez względu na
+to, ile trwa krok; zapas na ostatnią walidację i zapis to 1,3 × zmierzony czas walidacji + 30 s; gdy na ocenę testową zostaje
+mniej niż 10 min, liczy się ją na próbie. Dziennik podaje godziny (UTC i czas polski): start, koniec uczenia, koniec oceny, limit
+sesji. Sesja 1 (stara wersja) szacowała liczbę epok z pierwszej epoki (1013 s, kolejne 723 s), dlatego skończyła ok. 3 h za wcześnie.
+
+### Wyniki sesji 1 (36 epok, najlepsza 29; test: utwory i gracze spoza uczenia, 700 nagrań)
+
+| zbiór testowy (mikro) | gen 5 | **gen 6** |
+|---|---:|---:|
+| GuitarSet 03–05: nuty F1 (50 ms), akompaniament / melodie | 75,6 / 83,4 % | **84,4 / 88,8 %** |
+| GuitarSet: nuty z początkiem i końcem, akompaniament / melodie | 40,9 % (razem) | **68,0 / 77,9 %** |
+| klasyka (520 nagrań, 27 instrumentów, 11 miejsc): nuty F1 | 62,4 % (próba walidacyjna) | **≈ 80 %** |
+| razem (makro, 95 % przedział bootstrap) | | **84,8 % [83,8; 85,7]** |
+
+Najsłabiej: chór (55 %), kontrabas, wiolonczela i skrzypce (65–73 %), syntezator (70 %); najlepiej: ukulele, pizzicato, gitary (88–94 %).

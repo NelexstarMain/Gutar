@@ -41,6 +41,26 @@ def augment(x, aug, rng):
     return x
 
 
+def lr_time(step, q, cfg):
+    """lr przy uczeniu z terminem: rozgrzewka po krokach, potem kosinus po ułamku czasu q = upłynęło / dostępne (0..1).
+    Dzięki temu harmonogram zawsze kończy się dokładnie w terminie, niezależnie od tego, ile trwa krok."""
+    if step < cfg.warmup_steps:
+        return cfg.lr * (step + 1) / cfg.warmup_steps
+    return cfg.lr * 0.5 * (1 + math.cos(math.pi * min(1.0, max(0.0, q))))
+
+
+def fmt_clock(t):
+    """Godzina zegarowa UTC i czasu polskiego (do dziennika)."""
+    import datetime as _dt
+    u = _dt.datetime.fromtimestamp(t, _dt.timezone.utc)
+    try:
+        from zoneinfo import ZoneInfo
+        pl = u.astimezone(ZoneInfo('Europe/Warsaw')).strftime('%H:%M')
+    except Exception:
+        pl = '?'
+    return '%s UTC (%s w Polsce)' % (u.strftime('%H:%M'), pl)
+
+
 def lr_at(step, total, cfg):
     if step < cfg.warmup_steps:
         return cfg.lr * (step + 1) / cfg.warmup_steps
@@ -99,8 +119,11 @@ def val_subset(va, n, seed=0):
     return out
 
 
-def train(cfg: Config, out, resume=False, examples=None, log=print, jobs=None, extend=0, extend_lr=None):
-    """extend > 0 (z resume): dalsze uczenie o tyle epok z nowym cyklem lr (ciepły restart, szczyt extend_lr albo cfg.train.lr)."""
+def train(cfg: Config, out, resume=False, examples=None, log=print, jobs=None, extend=0, extend_lr=None, deadline=None, val_reserve=None):
+    """extend > 0 (z resume): dalsze uczenie o tyle epok z nowym cyklem lr (ciepły restart, szczyt extend_lr albo cfg.train.lr).
+    deadline (czas uniksowy) albo cfg.train.time_budget_sec > 0: uczenie z terminem. Zegar jest sprawdzany w każdym kroku,
+    harmonogram lr liczony od ułamka czasu, ostatnia walidacja i zapis kończą się przed terminem (zapas z pomiaru walidacji),
+    a liczba epok wynika z czasu (z extend: najwyżej extend epok)."""
     os.makedirs(out, exist_ok=True)
     torch.manual_seed(cfg.train.seed)
     rng = np.random.default_rng(cfg.train.seed)
@@ -145,13 +168,37 @@ def train(cfg: Config, out, resume=False, examples=None, log=print, jobs=None, e
     use_amp = bool(cfg.train.amp and dev.type == 'cuda')
     scaler = torch.amp.GradScaler('cuda', enabled=use_amp)
     t_start = time.time()
+    if deadline is None and cfg.train.time_budget_sec > 0:
+        deadline = t_start + cfg.train.time_budget_sec
+    est_val = val_reserve if val_reserve is not None else (180.0 if va else 5.0)  # zapas na walidację + zapis; poprawiany po każdej walidacji (x1.3)
+    t_cycle = t_start                # początek bieżącego cyklu lr (każda sesja z terminem to nowy cykl)
+    if deadline:
+        if not extend:
+            epochs = ep0 + 100000  # liczba epok wynika z czasu
+        s0, ep_s0 = step, ep0
+        log('uczenie z terminem: koniec kroków ok. %s, zapas na walidację %.0f s' % (fmt_clock(deadline - est_val), est_val))
+        if deadline - t_start < est_val + 10:
+            log('za mało czasu do terminu, pomijam uczenie')
+            epochs = ep0
     ep = ep0
-    while ep < epochs:
+    stop = False
+    while ep < epochs and not stop:
         net.train()
         acc = {}
+        n_done = 0
         for _ in range(cfg.train.steps_per_epoch):
-            for g in opt.param_groups:
-                g['lr'] = lr_at(step - s0, total - s0, cfg.train)
+            if deadline:
+                now = time.time()
+                stop_at = deadline - est_val
+                if now >= stop_at:  # termin: kończymy w środku epoki, walidacja i zapis zdążą
+                    stop = True
+                    break
+                q = (now - t_cycle) / max(1.0, stop_at - t_cycle)
+                for g in opt.param_groups:
+                    g['lr'] = lr_time(step - s0, q, cfg.train)
+            else:
+                for g in opt.param_groups:
+                    g['lr'] = lr_at(step - s0, total - s0, cfg.train)
             if pf:
                 x, tg, avail, valid = pf.get()
             else:
@@ -184,10 +231,15 @@ def train(cfg: Config, out, resume=False, examples=None, log=print, jobs=None, e
             scaler.step(opt)
             scaler.update()
             step += 1
+            n_done += 1
             for k, v in parts.items():
-                acc[k] = acc.get(k, 0) + v / cfg.train.steps_per_epoch
-        acc = {k: float(v) for k, v in acc.items()}
-        rec = {'epoch': ep, 'step': step, 'lr': opt.param_groups[0]['lr'], 'loss': acc, 'sec': round(time.time() - t_start, 1)}
+                acc[k] = acc.get(k, 0) + v
+        if not n_done:
+            break
+        acc = {k: float(v) / n_done for k, v in acc.items()}
+        rec = {'epoch': ep, 'step': step, 'steps': n_done, 'lr': opt.param_groups[0]['lr'], 'loss': acc,
+               'sec': round(time.time() - t_start, 1)}
+        t_val = time.time()
         if va:
             with torch.no_grad():
                 rows, groups, _ = evaluate_model(net, va, cfg)
@@ -197,12 +249,8 @@ def train(cfg: Config, out, resume=False, examples=None, log=print, jobs=None, e
         else:
             score = -sum(acc.values())
         rec['score'] = score
-        if ep == ep0 and cfg.train.time_budget_sec > 0:  # przycięcie liczby epok do budżetu czasu (harmonogram lr też)
-            per = time.time() - t_start
-            fit = ep0 + max(1, int(cfg.train.time_budget_sec // max(per, 1e-3)))
-            if fit < epochs:
-                log('budżet %.0f s, epoka %.0f s -> %d epok zamiast %d' % (cfg.train.time_budget_sec, per, fit, epochs))
-                epochs = fit; total = s0 + (epochs - ep_s0) * cfg.train.steps_per_epoch
+        if stop:
+            epochs = ep + 1  # zapis: sesja skończona w terminie (przy wznowieniu bez extend nic się nie dzieje)
         rec['epochs'] = epochs
         improved = not math.isnan(score) and score > best
         if improved:
@@ -212,6 +260,7 @@ def train(cfg: Config, out, resume=False, examples=None, log=print, jobs=None, e
             since += 1
         torch.save({'net': net.state_dict(), 'opt': opt.state_dict(), 'epoch': ep, 'step': step, 'best': best, 'since': since,
                     'epochs': epochs, 's0': s0, 'ep_s0': ep_s0, 'rng': rng, 'trng': torch.get_rng_state(), 'config': cfg.to_dict()}, last)
+        est_val = max(est_val, 1.3 * (time.time() - t_val) + (30 if val_reserve is None else 0))
         with open(os.path.join(out, 'log.jsonl'), 'a') as f:
             f.write(json.dumps(rec, ensure_ascii=False, default=float) + '\n')
         val_s = ''
@@ -219,7 +268,8 @@ def train(cfg: Config, out, resume=False, examples=None, log=print, jobs=None, e
             r = agg['RAZEM']
             val_s = '  [nuty F1 %.3f, początek+koniec %.3f, klatki %.3f]' % (r.get('note_F1', float('nan')), r.get('onoff_F1', float('nan')),
                                                                            r.get('frame_F1', float('nan')))
-        log('epoka %2d/%d  strata %s  %s=%.4f%s%s  (%.0f s)' % (ep, epochs, ' '.join('%s %.4f' % kv for kv in acc.items()),
+        lbl = ('/%d' % epochs) if not deadline or extend else ''
+        log('epoka %2d%s  strata %s  %s=%.4f%s%s  (%.0f s)' % (ep, lbl, ' '.join('%s %.4f' % kv for kv in acc.items()),
                                                               cfg.train.select_metric, score, ' *' if improved else '', val_s,
                                                               time.time() - t_start))
         ep += 1
