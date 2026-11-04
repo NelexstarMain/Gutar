@@ -139,7 +139,7 @@ def main():
     if torch.cuda.is_available():
         net = net.cuda()
     te = [e for e in exs if e.split == 'test']
-    log('ocena testowa: %d nagrań, najlepsza epoka %d (walidacja %.4f)' % (len(te), st['epoch'], st['score']))
+    log('ocena testowa: %d nagrań, najlepsza epoka %d (walidacja %.4f)' % (len(te), st['epoch'], st.get('score', st.get('best', float('nan')))))
     left = end_session - a.margin_min * 60 - time.time()
     if te and left < 600:  # za mało czasu na pełną ocenę: próba, żeby sesja nie została ucięta przed zapisem wyniku
         k = max(20, int(len(te) * left / (a.eval_hours * 3600)))
