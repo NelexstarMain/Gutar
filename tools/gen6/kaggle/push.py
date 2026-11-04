@@ -36,7 +36,7 @@ def pack():
     buf = io.BytesIO()
     with tarfile.open(fileobj=buf, mode='w:gz') as tf:
         for f in files:
-            if '__pycache__' in f or f.startswith('tools/baseline/') or not os.path.isfile(os.path.join(ROOT, f)):
+            if '__pycache__' in f or f.startswith('tools/baseline/') or f.startswith('tools/gen6/server/model/') or not os.path.isfile(os.path.join(ROOT, f)):
                 continue
             tf.add(os.path.join(ROOT, f), f)
     return base64.b64encode(buf.getvalue()).decode()
