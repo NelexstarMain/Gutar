@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gitara Słuchacz</title>
+<style>
+:root{--bg:#fff;--fg:#1c1c1c;--mut:#666;--bar:#f1f1f1;--bd:#d6d6d6;--acc:#0b6bcb;--acc-fg:#fff;--cur:#e5262a;--note:#ffae1a}
+@media(prefers-color-scheme:dark){:root{--bg:#141414;--fg:#e8e8e8;--mut:#9a9a9a;--bar:#222;--bd:#3a3a3a;--acc:#4da3ff;--acc-fg:#08121d;--cur:#ff5a5e;--note:#ffbe3c}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.45 system-ui,sans-serif}
+header{padding:12px 16px;border-bottom:1px solid var(--bd);background:var(--bar)}
+h1{font-size:18px;margin:0}
+main{padding:16px;max-width:1100px;margin:0 auto}
+.row{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:12px}
+button,input[type=text],label.btn{font:inherit;color:var(--fg);background:var(--bg);border:1px solid var(--bd);border-radius:6px;padding:7px 12px}
+button,label.btn{cursor:pointer}
+button.main{background:var(--acc);color:var(--acc-fg);border-color:var(--acc)}
+button:disabled{opacity:.5;cursor:default}
+input[type=file]{display:none}
+#st{color:var(--mut);min-height:24px}
+#roll{overflow-x:auto;border:1px solid var(--bd);border-radius:6px;margin:10px 0}
+canvas{display:block}
+audio{width:100%;margin:6px 0}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{border-bottom:1px solid var(--bd);padding:4px 8px;text-align:right}
+th:first-child,td:first-child{text-align:left}
+.mut{color:var(--mut);font-size:13px}
+</style>
+</head>
+<body>
+<header><h1>Gitara Słuchacz: opis nut z nagrania</h1></header>
+<main>
+  <div class="row">
+    <label class="btn">Wybierz nagranie (WAV, MP3, M4A…)<input id="f" type="file" accept="audio/*,.wav,.mp3,.m4a,.ogg,.flac"></label>
+    <input id="tok" type="text" placeholder="token (jeśli serwer wymaga)" size="22" autocomplete="off">
+    <button id="go" class="main" disabled>Analizuj</button>
+  </div>
+  <div id="st">Wybierz plik z nagraniem gitary (do ok. 20 minut).</div>
+  <audio id="au" controls style="display:none"></audio>
+  <div id="roll" style="display:none"><canvas id="cv"></canvas></div>
+  <div id="res" style="display:none">
+    <div class="row">
+      <button id="bm">Pobierz MIDI</button><button id="bc">Pobierz CSV</button><button id="bj">Pobierz JSON</button>
+      <span class="mut" id="info"></span>
+    </div>
+    <div style="max-height:320px;overflow:auto"><table id="tb"><thead><tr><th>nuta</th><th>początek [s]</th><th>koniec [s]</th><th>struna</th><th>próg</th><th>pewność</th></tr></thead><tbody></tbody></table></div>
+  </div>
+  <p class="mut">Model gen 6 (250 tys. parametrów), uczony na muzyce klasycznej, środowiskach i GuitarSet. Nagranie jest wysyłane na ten serwer,
+  przeliczane na mono 22 kHz w przeglądarce. Struna 1 = najniższa (E2).</p>
+</main>
+<script>
+'use strict';
+const $ = id => document.getElementById(id), NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+const nn = m => NAMES[m % 12] + (Math.floor(m / 12) - 1), LO = 36, NS = 53, RH = 10, PPS = 80, GUT = 40;
+let file = null, notes = [], dur = 0, actx = null, base = 'nagranie';
+try { $('tok').value = localStorage.getItem('gutar_tok') || ''; } catch (e) {}
+const st = m => { $('st').textContent = m; };
+$('f').onchange = e => {
+  file = e.target.files[0]; if (!file) return;
+  base = file.name.replace(/\.[^.]+$/, ''); $('go').disabled = false;
+  const au = $('au'); au.src = URL.createObjectURL(file); au.style.display = 'block';
+  st(file.name + ' (' + (file.size / 1e6).toFixed(1) + ' MB). Kliknij „Analizuj”.');
+};
+function wavEncode(x, sr) {
+  const b = new ArrayBuffer(44 + x.length * 2), v = new DataView(b), w = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+  w(0, 'RIFF'); v.setUint32(4, 36 + x.length * 2, true); w(8, 'WAVEfmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+  v.setUint32(24, sr, true); v.setUint32(28, sr * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true); w(36, 'data'); v.setUint32(40, x.length * 2, true);
+  for (let i = 0; i < x.length; i++) v.setInt16(44 + i * 2, Math.max(-1, Math.min(1, x[i])) * 32767, true);
+  return b;
+}
+async function toWav22k(f) {
+  actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+  const buf = await actx.decodeAudioData(await f.arrayBuffer()); dur = buf.duration;
+  const off = new OfflineAudioContext(1, Math.max(1, Math.ceil(buf.duration * 22050)), 22050), s = off.createBufferSource();
+  s.buffer = buf; s.connect(off.destination); s.start();
+  return wavEncode((await off.startRendering()).getChannelData(0), 22050);
+}
+$('go').onclick = async () => {
+  if (!file) return; $('go').disabled = true;
+  try {
+    const tok = $('tok').value.trim(); try { localStorage.setItem('gutar_tok', tok); } catch (e) {}
+    st('Przygotowuję nagranie…'); const wav = await toWav22k(file);
+    st('Analizuję na serwerze (' + (wav.byteLength / 1e6).toFixed(1) + ' MB)… dla kilku minut gry to kilkanaście sekund do minuty.');
+    const t0 = performance.now(), r = await fetch('/transcribe', {method: 'POST', body: wav, headers: tok ? {'X-Token': tok} : {}});
+    if (!r.ok) throw new Error(r.status === 401 ? 'zły token' : r.status + ' ' + (await r.text()).slice(0, 200));
+    const j = await r.json(); notes = j.notes;
+    show(j, (performance.now() - t0) / 1000);
+  } catch (e) { st('Błąd: ' + e.message); }
+  $('go').disabled = false;
+};
+function show(j, sec) {
+  st('Gotowe: ' + notes.length + ' nut w ' + sec.toFixed(1) + ' s (nagranie ' + dur.toFixed(0) + ' s).');
+  $('info').textContent = 'model: epoka ' + j.model.epoch + ', czas serwera ' + j.timing.total_s + ' s';
+  $('res').style.display = 'block'; $('roll').style.display = 'block';
+  const tb = $('tb').tBodies[0]; tb.innerHTML = '';
+  for (const n of notes) { const r = tb.insertRow(); [nn(n.pitch) + ' (' + n.pitch + ')', n.onset.toFixed(2), n.offset.toFixed(2), n.string === undefined ? '' : n.string + 1, n.fret === undefined ? '' : n.fret, (n.confidence * 100).toFixed(0) + ' %'].forEach((t, i) => { const c = r.insertCell(); c.textContent = t; }); }
+  draw();
+}
+const cv = $('cv'), g = cv.getContext('2d');
+function draw(cur) {
+  const css = getComputedStyle(document.documentElement), c = n => css.getPropertyValue(n).trim();
+  const W = GUT + Math.ceil((dur + 1) * PPS), H = NS * RH + 20, dpr = window.devicePixelRatio || 1;
+  if (cv._W !== W) { cv.width = W * dpr; cv.height = H * dpr; cv.style.width = W + 'px'; cv.style.height = H + 'px'; cv._W = W; }
+  g.setTransform(dpr, 0, 0, dpr, 0, 0); g.fillStyle = c('--bg'); g.fillRect(0, 0, W, H);
+  g.font = '10px system-ui'; g.textBaseline = 'middle';
+  for (let s = 0; s < NS; s++) {
+    const m = LO + s, y = (NS - 1 - s) * RH + 20;
+    if (m % 12 === 0 || m % 12 === 4 || m % 12 === 7) { g.fillStyle = c('--mut'); g.fillText(nn(m), 4, y + RH / 2); }
+    g.fillStyle = [1, 3, 6, 8, 10].includes(m % 12) ? 'rgba(128,128,128,.10)' : 'rgba(128,128,128,.03)'; g.fillRect(GUT, y, W - GUT, RH);
+    if (m % 12 === 0) { g.fillStyle = 'rgba(128,128,128,.35)'; g.fillRect(GUT, y + RH, W - GUT, 1); }
+  }
+  g.fillStyle = c('--mut'); g.textBaseline = 'top'; for (let t = 0; t <= dur; t += 5) { g.fillRect(GUT + t * PPS, 0, 1, 8); g.fillText(t + ' s', GUT + t * PPS + 3, 2); }
+  for (const n of notes) {
+    const x = GUT + n.onset * PPS, w = Math.max(3, (n.offset - n.onset) * PPS), y = (NS - 1 - (n.pitch - LO)) * RH + 20;
+    if (y < 20 || y > H) continue; g.globalAlpha = 0.45 + 0.55 * n.confidence; g.fillStyle = c('--note'); g.fillRect(x, y + 1, w, RH - 2); g.globalAlpha = 1;
+  }
+  if (cur !== undefined) { g.fillStyle = c('--cur'); g.fillRect(GUT + cur * PPS, 0, 2, H); }
+}
+const au = $('au');
+function loop() { draw(au.currentTime); const r = $('roll'), x = GUT + au.currentTime * PPS; if (x > r.scrollLeft + r.clientWidth - 40 || x < r.scrollLeft) r.scrollLeft = Math.max(0, x - 60); if (!au.paused) requestAnimationFrame(loop); }
+au.onplay = () => requestAnimationFrame(loop); au.onseeked = () => draw(au.currentTime);
+cv.onclick = e => { au.currentTime = Math.max(0, (e.offsetX - GUT) / PPS); draw(au.currentTime); };
+function dl(name, data, type) { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([data], {type})); a.download = name; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500); }
+$('bc').onclick = () => dl(base + '.csv', 'onset,offset,pitch,string,fret\n' + notes.map(n => [n.onset, n.offset, n.pitch, n.string === undefined ? '' : n.string, n.fret === undefined ? '' : n.fret].join(',')).join('\n') + '\n', 'text/csv');
+$('bj').onclick = () => dl(base + '.json', JSON.stringify(notes, null, 1), 'application/json');
+$('bm').onclick = () => {
+  const vlq = n => { const o = [n & 127]; n >>= 7; while (n) { o.push((n & 127) | 128); n >>= 7; } return o.reverse(); }, ev = [];
+  for (const n of notes) { const a = Math.round(n.onset * 960), b = Math.max(a + 1, Math.round(n.offset * 960)); ev.push([a, 1, 0x90, n.pitch, 80], [b, 0, 0x80, n.pitch, 0]); }
+  ev.sort((x, y) => x[0] - y[0] || x[1] - y[1]); const t = [0, 0xff, 0x51, 3, 7, 0xa1, 0x20, 0, 0xc0, 24]; let last = 0;
+  for (const [tick, , s, p, v] of ev) { t.push(...vlq(tick - last), s, p, v); last = tick; } t.push(0, 0xff, 0x2f, 0);
+  const u32 = n => [n >>> 24, (n >> 16) & 255, (n >> 8) & 255, n & 255];
+  dl(base + '.mid', new Uint8Array([0x4d, 0x54, 0x68, 0x64, ...u32(6), 0, 0, 0, 1, 1, 0xe0, 0x4d, 0x54, 0x72, 0x6b, ...u32(t.length), ...t]), 'audio/midi');
+};
+</script>
+</body>
+</html>

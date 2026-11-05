@@ -3,6 +3,12 @@
 Telefon wysyła nagranie WAV (odebrane z ESP32 przez Bluetooth) na serwer, serwer zwraca nuty. Kod: `tools/gen6/server/`
 (FastAPI), model: `tools/gen6/server/model/best.pt` (1 MB; po kolejnych sesjach treningu podmień plik i wdróż ponownie).
 
+## Strona do wypróbowania (GET /)
+
+Serwer pod adresem głównym (`/`) udostępnia stronę: wybierasz nagranie (WAV, MP3, M4A, OGG, FLAC; przeglądarka zamienia je na WAV 22 kHz
+mono), klikasz „Analizuj”, widzisz nuty na wykresie (z odtwarzaniem i kursorem), tabelę nut i pobierasz MIDI, CSV albo JSON. Token
+wpisujesz w polu u góry (przeglądarka go zapamiętuje).
+
 ## Interfejs
 
 | zapytanie | wynik |
@@ -27,7 +33,7 @@ pip install torch numpy fastapi uvicorn
 GUTAR_TOKEN=tajny uvicorn tools.gen6.server.app:app --port 8080
 ```
 
-Test na GuitarSet (04_SS1-100-C#_solo, 29 s, mikrofon): 72 nuty (prawda 71), F1 nut 0,84, 5 s na 4 rdzeniach
+Model w serwerze: epoka 81 (sesja 4), F1 nut na walidacji 90,27 %. Test na GuitarSet (04_SS1-100-C#_solo, 29 s, mikrofon): 72 nuty (prawda 71), F1 nut 0,84, 5 s na 4 rdzeniach
 (3 s model, 2 s cechy), czyli ok. 0,17 czasu nagrania; 3 minuty gry to ok. 30 s na 4 rdzeniach, na Cloud Run z 2 vCPU pewnie
 ok. 1 min (szacunek, nie pomiar).
 

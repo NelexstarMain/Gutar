@@ -19,7 +19,7 @@ import time
 import numpy as np
 import torch
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 
 from ..config import Config
 from ..decode import decode_notes
@@ -62,6 +62,12 @@ def _check_token(req: Request):
 def _startup():
     if os.environ.get('GUTAR_PRELOAD', '1') == '1':
         _load()
+
+
+@app.get('/', response_class=HTMLResponse)
+def index():
+    """Strona do wypróbowania modelu: wczytaj nagranie (WAV, MP3, M4A…), zobacz nuty, pobierz MIDI / CSV."""
+    return HTMLResponse(open(os.path.join(os.path.dirname(__file__), 'ui.html'), encoding='utf-8').read())
 
 
 @app.get('/health')
