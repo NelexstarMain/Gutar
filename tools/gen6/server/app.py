@@ -22,7 +22,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 
 from ..config import Config
-from ..decode import decode_notes
+from ..decode import apply_decode_override, decode_notes
 from ..features import hcqt
 from ..audio import load_audio
 from ..model import Gen6
@@ -39,6 +39,7 @@ def _load():
     ck = os.environ.get('GUTAR_CKPT', os.path.join(os.path.dirname(__file__), 'model', 'best.pt'))
     st = torch.load(ck, weights_only=False, map_location='cpu')
     cfg = Config.from_dict(st['config'])
+    apply_decode_override(cfg, ck)
     net = Gen6(cfg)
     net.load_state_dict(st['net'])
     net.eval()

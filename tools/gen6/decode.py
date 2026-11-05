@@ -11,6 +11,18 @@ from .config import DecodeConfig, FeatureConfig, LabelConfig
 from .data import Note
 
 
+def apply_decode_override(cfg, ckpt_path):
+    """Dostrojone progi dekodera: plik decode.json obok punktu kontrolnego (wynik tune_decoder.py) nadpisuje cfg.decode."""
+    import json
+    import os
+    p = os.path.join(os.path.dirname(os.path.abspath(ckpt_path)), 'decode.json')
+    if os.path.exists(p):
+        for k, v in json.load(open(p)).get('decode', {}).items():
+            if hasattr(cfg.decode, k):
+                setattr(cfg.decode, k, type(getattr(cfg.decode, k))(v))
+    return cfg
+
+
 def _peaks(x, th):
     """lokalne maksima >= th wzdłuż osi 0 (pierwsze z równych)."""
     prev = np.vstack([np.full((1,) + x.shape[1:], -np.inf), x[:-1]])
@@ -23,7 +35,7 @@ def decode_notes(p, f: FeatureConfig, d: DecodeConfig, lc: LabelConfig = None):
     fr, on = p['frame'], p['onset']
     off = p.get('offset')
     T, S = fr.shape
-    pk_on = _peaks(on, d.th_onset) & (fr >= 0.3)
+    pk_on = _peaks(on, d.th_onset) & (fr >= d.th_onset_frame)
     pk_off = _peaks(off, d.th_offset) if off is not None else np.zeros_like(fr, bool)
     cen = f.frame_center(np.arange(T))
     half = 0.5 * f.hop / f.sr

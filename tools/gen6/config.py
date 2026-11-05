@@ -90,6 +90,7 @@ class LossConfig:
 @dc.dataclass
 class DecodeConfig:
     th_onset: float = 0.5
+    th_onset_frame: float = 0.3     # początek liczy się tylko, gdy p(brzmi) w tej klatce >= tego progu
     th_frame: float = 0.5
     th_offset: float = 0.5
     th_start: float = 0.7           # nuta bez wykrytego początku: p(brzmi) >= th_start przez min_frames klatek

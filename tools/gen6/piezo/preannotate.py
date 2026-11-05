@@ -26,6 +26,8 @@ def main():
     from tools.gen6.server.midi_out import notes_to_midi
     st = torch.load(a.ckpt, weights_only=False, map_location='cpu')
     cfg = Config.from_dict(st['config'])
+    from tools.gen6.decode import apply_decode_override
+    apply_decode_override(cfg, a.ckpt)
     if a.th_onset:
         cfg.decode.th_onset = a.th_onset
     net = Gen6(cfg); net.load_state_dict(st['net']); net.eval()

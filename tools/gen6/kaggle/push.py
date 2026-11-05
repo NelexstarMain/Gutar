@@ -15,8 +15,8 @@ etap B <użytkownik>/gutar-guitarset-czesci (annotation.zip i audio_00..05.zip; 
 import argparse, base64, io, json, os, subprocess, sys, tarfile, tempfile
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
-SLUG = {'dane': 'gutar-gen6-dane', 'dane2': 'gutar-gen6-dane2', 'trening': 'gutar-gen6-trening', 'dalej': 'gutar-gen6-trening-dalej', 'piezo': 'gutar-gen6-piezo'}
-TITLE = {'dane': 'Gutar gen6 dane', 'dane2': 'Gutar gen6 dane2', 'trening': 'Gutar gen6 trening', 'dalej': 'Gutar gen6 trening dalej', 'piezo': 'Gutar gen6 piezo'}
+SLUG = {'dane': 'gutar-gen6-dane', 'dane2': 'gutar-gen6-dane2', 'trening': 'gutar-gen6-trening', 'dalej': 'gutar-gen6-trening-dalej', 'piezo': 'gutar-gen6-piezo', 'tune': 'gutar-gen6-tune'}
+TITLE = {'dane': 'Gutar gen6 dane', 'dane2': 'Gutar gen6 dane2', 'trening': 'Gutar gen6 trening', 'dalej': 'Gutar gen6 trening dalej', 'piezo': 'Gutar gen6 piezo', 'tune': 'Gutar gen6 tune'}
 
 STUB = r'''# Gitara Słuchacz, generacja 6: %(what)s (wygenerowane przez tools/gen6/kaggle/push.py)
 import base64, io, os, subprocess, sys, tarfile
@@ -44,7 +44,7 @@ def pack():
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('stage', choices=['dane', 'dane2', 'trening', 'dalej', 'piezo'])
+    ap.add_argument('stage', choices=['dane', 'dane2', 'trening', 'dalej', 'piezo', 'tune'])
     ap.add_argument('--extra-data', default='', help='dodatkowe notatniki z danymi dla uczenia, np. gutar-gen6-dane2')
     ap.add_argument('--piezo-ds', default='gutar-piezo', help='dostrajanie: zbiór danych z nagraniami piezo, opisami i manifest_piezo.jsonl')
     ap.add_argument('--from-kernel', default='', help="dalej: notatnik, z którego wznawiamy (domyślnie gutar-gen6-trening), np. gutar-gen6-trening-3")
@@ -61,7 +61,10 @@ def main():
         a.user = next((l.split(':', 1)[1].strip() for l in out.splitlines() if 'username' in l), None)
     if not a.user:
         sys.exit('podaj --user (nazwa konta Kaggle)')
-    script = 'tools/gen6/kaggle/prepare.py' if a.stage.startswith('dane') else 'tools/gen6/kaggle/train_kaggle.py'
+    script = ('tools/gen6/kaggle/prepare.py' if a.stage.startswith('dane') else
+              'tools/gen6/kaggle/tune_kaggle.py' if a.stage == 'tune' else 'tools/gen6/kaggle/train_kaggle.py')
+    if a.stage == 'tune':  # strojenie dekodera: CPU, z notatnika uczenia (domyślnie ostatniego)
+        a.args = ('--from-kernel %s ' % (a.from_kernel or 'gutar-gen6-trening-4') + a.args).strip()
     if a.stage == 'dane2':  # dodatkowe nagrania: inne ziarna, tylko train (walidacja i test zostają z pierwszego zestawu)
         a.args = ('--seed-base 7 --env-seed 90000 --versions 3 --clips 1 --len 8 16 --only-train --no-guitarset ' + a.args).strip()
     if a.stage == 'dalej':  # druga sesja: dalsze uczenie od last.pt z wyniku notatnika 'trening'
@@ -74,17 +77,18 @@ def main():
     code = pack()
     open(os.path.join(d, 'run.py'), 'w').write(STUB % {'what': a.stage, 'code': code, 'cmd': cmd})
     meta = {'id': '%s/%s' % (a.user, slug), 'title': TITLE.get(a.stage, slug) if not a.slug else slug.replace('-', ' '), 'code_file': 'run.py', 'language': 'python',
-            'kernel_type': 'script', 'is_private': True, 'enable_gpu': not a.stage.startswith('dane'), 'enable_tpu': False,
+            'kernel_type': 'script', 'is_private': True, 'enable_gpu': not (a.stage.startswith('dane') or a.stage == 'tune'), 'enable_tpu': False,
             'enable_internet': True,
             'dataset_sources': ['%s/%s' % (a.user, ds) for ds in ((a.piezo_ds if a.stage == 'piezo' else a.korpus) if a.stage.startswith('dane') or a.stage == 'piezo' else a.guitarset).split(',') if ds], 'competition_sources': [],
             'kernel_sources': {'dane': [], 'dane2': [], 'trening': ['%s/%s' % (a.user, SLUG['dane'])],
                                'dalej': ['%s/%s' % (a.user, SLUG['dane']), '%s/%s' % (a.user, a.from_kernel or SLUG['trening'])],
-                               'piezo': ['%s/%s' % (a.user, SLUG['dane']), '%s/%s' % (a.user, a.pretrained)]}[a.stage]
+                               'piezo': ['%s/%s' % (a.user, SLUG['dane']), '%s/%s' % (a.user, a.pretrained)],
+                               'tune': ['%s/%s' % (a.user, SLUG['dane']), '%s/%s' % (a.user, a.from_kernel or 'gutar-gen6-trening-4')]}[a.stage]
                               + ['%s/%s' % (a.user, x) for x in a.extra_data.split(',') if x and not a.stage.startswith('dane')]}
     json.dump(meta, open(os.path.join(d, 'kernel-metadata.json'), 'w'), indent=1)
     print('kod: %.0f kB, katalog %s' % (len(code) / 1024, d))
     push = ['kaggle', 'kernels', 'push', '-p', d]
-    if not a.stage.startswith('dane'):
+    if not (a.stage.startswith('dane') or a.stage == 'tune'):
         push += ['--accelerator', a.accelerator]
     subprocess.run(push, check=True)
 
