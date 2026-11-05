@@ -198,4 +198,125 @@ a_ = [85.9, 69.4, 88.5, 88.8, 84.2]; b_ = [86.6, 70.0, 87.3, 93.5, 82.1]; x = np
 ax.bar(x - .2, a_, .4, color=B, label='domyślny'); ax.bar(x + .2, b_, .4, color=G, label='dostrojony'); ax.set_xticks(x); ax.set_xticklabels(lab); ax.set_ylim(60, 98); ax.legend()
 for xx, u, w in zip(x, a_, b_): ax.text(xx - .2, u + .5, u, ha='center', fontsize=7); ax.text(xx + .2, w + .5, w, ha='center', fontsize=7)
 ax.set_title('test 700 nagrań (makro): wpływ dostrojenia progów'); save('r15_dekoder_wyniki')
-print('ok', os.listdir(OUT))
+
+# ================= rysunki do Części I (tłumaczenie matematyki)
+# 16. próbkowanie i aliasing
+fig, ax = plt.subplots(1, 2, figsize=(9, 2.8))
+tc = np.linspace(0, 0.002, 2000); ts = np.arange(0, 0.002, 1 / fs)
+ax[0].plot(tc * 1000, np.sin(2 * np.pi * 2000 * tc), color=B, lw=1); ax[0].plot(ts * 1000, np.sin(2 * np.pi * 2000 * ts), 'o', color=O, ms=4)
+ax[0].set(title='2000 Hz: ok. 5,5 próbki na okres', xlabel='czas [ms]')
+ax[1].plot(tc * 1000, np.sin(2 * np.pi * 7000 * tc), color=B, lw=.6, label='ton 7000 Hz'); ax[1].plot(tc * 1000, -np.sin(2 * np.pi * 4025 * tc), color=R, lw=1, label='„duch” 4025 Hz')
+ax[1].plot(ts * 1000, np.sin(2 * np.pi * 7000 * ts), 'o', color=O, ms=4); ax[1].legend(fontsize=7, loc='lower left')
+ax[1].set(title='7000 Hz > Nyquist (5512,5): próbki pasują do 4025 Hz', xlabel='czas [ms]')
+save('r16_probkowanie')
+
+# 17. intuicja DFT
+fig, ax = plt.subplots(1, 4, figsize=(11, 2.6)); tn = np.linspace(0, 1, 800, endpoint=False)
+x = np.sin(2 * np.pi * 3 * tn) + .6 * np.sin(2 * np.pi * 5 * tn)
+for c, kk in enumerate((3, 4, 5)):
+    prod = x * np.sin(2 * np.pi * kk * tn)
+    ax[c].plot(tn, prod, color=B, lw=.8); ax[c].axhline(prod.mean(), color=R, lw=1.5); ax[c].set_ylim(-2, 2)
+    ax[c].set_title('sygnał × fala %d Hz\nśrednia (czerwona) = %.2f' % (kk, prod.mean()), fontsize=8); ax[c].set_xlabel('czas [s]')
+ax[3].bar([3, 4, 5], [.5, 0, .3], color=G); ax[3].set(title='wynik: „ile którego tonu”\n(3 Hz: 1·½, 5 Hz: 0,6·½)', xlabel='częstotliwość testowa [Hz]', xticks=[3, 4, 5]); ax[3].title.set_fontsize(8)
+fig.subplots_adjust(wspace=.35)
+save('r17_dft')
+
+# 18. decybele i normalizacja
+fig, ax = plt.subplots(1, 2, figsize=(9, 2.8)); A = np.logspace(-4, 0, 300)
+ax[0].semilogx(A, 20 * np.log10(A), color=B); ax[0].set(xlabel='amplituda $A$', ylabel='$L=20\\log_{10}A$ [dB]', title='decybele: mnożenie $\\to$ dodawanie')
+for a_, c in ((.5, R), (.1, O), (.01, G)): ax[0].plot(a_, 20 * np.log10(a_), 'o', color=c); ax[0].annotate('%.1f dB' % (20 * np.log10(a_)), (a_, 20 * np.log10(a_)), (a_ * 1.3, 20 * np.log10(a_) - 6), fontsize=7)
+L = np.linspace(-80, 10, 200); ax[1].plot(L, np.clip((L + 6) / 60 + 1, 0, 1.3), color=G)
+ax[1].set(xlabel='$L$ [dB] (przy $L_{ref}=-6$ dB)', ylabel='cecha $X$', title='normalizacja: 0 = ref−60 dB, 1 = ref, przycięcie 1,3'); ax[1].plot([-26], [.667], 'o', color=R); ax[1].annotate('$A=0{,}05$: $X=0{,}667$', (-26, .667), (-70, 1.0), arrowprops=dict(arrowstyle='->'), fontsize=8)
+save('r18_decybele')
+
+# 19. konwolucja krok po kroku
+fig, ax = plt.subplots(2, 1, figsize=(8, 3.6)); xs_ = [1, 2, 3, 4, 5]
+for a, d, ys in ((ax[0], 1, [-2, -2, -2, -2, 4]), (ax[1], 2, [-3, -4, -4, 2, 3])):
+    a.axis('off'); a.set_xlim(-1, 12.5); a.set_ylim(-.3, 3.3)
+    for i, v in enumerate(xs_): a.add_patch(Rectangle((i * 1.2, 2), 1, .8, fc='#e8f0fa', ec=K)); a.text(i * 1.2 + .5, 2.4, v, ha='center', va='center')
+    for i, v in enumerate(ys): a.add_patch(Rectangle((i * 1.2, 0), 1, .8, fc='#fbd9b0', ec=K)); a.text(i * 1.2 + .5, .4, v, ha='center', va='center')
+    i = 2
+    for j, c in ((-d, G), (d, R)):
+        jj = i + j
+        if 0 <= jj < 5: a.annotate('', (i * 1.2 + .5, .85), (jj * 1.2 + .5, 1.95), arrowprops=dict(arrowstyle='-|>', color=c, lw=1.2))
+    a.text(7.3, 2.4, 'x', fontsize=9, ha='left'); a.text(7.3, .4, 'y', fontsize=9)
+    a.text(7.8, 1.5, ('$d=%d$: $y[i]=x[i-%d]-x[i+%d]$\nprzykład $i=2$ (trzeci element):\n$%d-%d=%d$' % (d, d, d, xs_[2 - d] if 2 - d >= 0 else 0, xs_[2 + d] if 2 + d < 5 else 0, ys[2])), fontsize=8, va='center')
+save('r19_konwolucja')
+
+# 20. softmax
+fig, ax = plt.subplots(1, 3, figsize=(10, 2.7))
+for a, z, tt in ((ax[0], np.array([.707, 0, .707]), 'logity $\\to$ wagi'), (ax[1], np.array([3, 1, 0.]), 'duże różnice: prawie „twardy” wybór'), (ax[2], np.array([2, 2, -np.inf, 2.]), 'maska $-\\infty$ → waga 0')):
+    e = np.exp(z - z[np.isfinite(z)].max()); w_ = e / e.sum(); xx = np.arange(len(z))
+    a.bar(xx - .2, np.where(np.isfinite(z), z, 0), .4, color='#bbb', label='logit'); a.bar(xx + .2, w_, .4, color=B, label='softmax')
+    for q, v in zip(xx, w_): a.text(q + .2, v + .03, '%.2f' % v, ha='center', fontsize=7)
+    a.set_title(tt, fontsize=8); a.set_xticks(xx)
+ax[0].legend(fontsize=7)
+save('r20_softmax')
+
+# 21. LayerNorm i residual
+fig, ax = plt.subplots(1, 3, figsize=(10, 2.7), gridspec_kw={'width_ratios': [1, 1, 1.2]})
+z = np.array([1, 2, 3, 6.]); zn = (z - z.mean()) / z.std(); z2 = z * 100; zn2 = (z2 - z2.mean()) / z2.std()
+ax[0].bar(range(4), z, color='#bbb'); ax[0].set_title('wejście $(1,2,3,6)$', fontsize=8)
+ax[1].bar(range(4), zn, color=B, label='$(1,2,3,6)$'); ax[1].bar(np.arange(4) + .0, zn2, .3, color=O, alpha=.8, label='$(100..600)$ — to samo!'); ax[1].legend(fontsize=7); ax[1].set_title('po LayerNorm: średnia 0, wariancja 1', fontsize=8)
+ax[2].axis('off'); ax[2].set_xlim(0, 10); ax[2].set_ylim(0, 6)
+ax[2].add_patch(FancyBboxPatch((3.5, 1.7), 3, 1.6, boxstyle='round', fc='#fbd9b0', ec=K)); ax[2].text(5, 2.5, '$F$ (warstwa)', ha='center', va='center', fontsize=8)
+ax[2].annotate('', (5, 1.7), (5, .4), arrowprops=dict(arrowstyle='->')); ax[2].text(5.2, .1, '$x$', fontsize=9)
+ax[2].annotate('', (5, 4.7), (5, 3.3), arrowprops=dict(arrowstyle='->')); ax[2].text(5.2, 4.9, '$y=x+F(x)$', fontsize=9)
+ax[2].annotate('', (1.5, 4.0), (1.5, .8), arrowprops=dict(arrowstyle='-', color=R, lw=1.5)); ax[2].plot([1.5, 4.7], [.8, .8], color=R, lw=1.5); ax[2].plot([1.5, 4.7], [4.0, 4.0], color=R, lw=1.5)
+ax[2].text(0, 2.4, 'skrót\n(gradient\nlata tędy)', fontsize=7, color=R); ax[2].set_title('połączenie resztkowe', fontsize=8)
+save('r21_ln_residual')
+
+# 22. uwaga krok po kroku (T=4, d=2)
+rng = np.random.default_rng(5); Tn = 4
+Q = np.array([[1, 0], [0, 1], [1, 1], [.5, -.5]]); Kx = np.array([[1, 0], [0, 1], [1, 1], [-.5, .5]]); V = np.array([[1, 0], [0, 2], [3, 3], [1, -1.]])
+S_ = Q @ Kx.T / math.sqrt(2); Aw = np.exp(S_) / np.exp(S_).sum(1, keepdims=True); Y = Aw @ V
+fig, ax = plt.subplots(1, 4, figsize=(11, 2.9))
+for a, M_, tt in ((ax[0], S_, '1) wyniki $q_i\\cdot k_j/\\sqrt{d}$'), (ax[1], Aw, '2) softmax po wierszu → wagi $a_{ij}$'), (ax[2], Y, '3) $y_i=\\sum_j a_{ij}v_j$')):
+    a.imshow(M_, cmap='Blues', aspect='auto'); a.set_title(tt, fontsize=8); a.grid(False)
+    for i in range(M_.shape[0]):
+        for j in range(M_.shape[1]): a.text(j, i, '%.2f' % M_[i, j], ha='center', va='center', fontsize=8, color='k')
+for a_ in ax[:3]: a_.set_yticks(range(4)); a_.set_yticklabels(['1', '2', '3', '4'])
+for a_ in ax[:2]: a_.set_xticks(range(4)); a_.set_xticklabels(['1', '2', '3', '4'])
+ax[2].set_xticks([0, 1]); ax[2].set_xticklabels(['1.', '2.'])
+ax[0].set(xlabel='klucz $j$', ylabel='zapytanie $i$'); ax[1].set(xlabel='klucz $j$'); ax[2].set(xlabel='współrzędna wyniku')
+ax[3].axis('off'); ax[3].text(0, .5, 'Wiersze wag sumują się do 1:\n' + '\n'.join('$\\Sigma_%d$ = %.2f' % (i + 1, Aw[i].sum()) for i in range(4)) + '\n\n$q_1$ najbardziej\npasuje do $k_1$ i $k_3$,\nwięc $y_1$ to głównie\nmieszanka $v_1$ i $v_3$.', fontsize=8, va='center')
+save('r22_uwaga_kroki')
+
+# 23. gradient: SGD vs Adam
+fig, ax = plt.subplots(figsize=(5.6, 3.4)); gx, gy = np.meshgrid(np.linspace(-1.2, 1.2, 200), np.linspace(-1.2, 1.2, 200)); Lf = lambda x, y: .5 * (x ** 2 + 20 * y ** 2)
+ax.contour(gx, gy, Lf(gx, gy), 14, cmap='Greys', linewidths=.6)
+def run(opt):
+    th = np.array([-1., 1.]); path = [th.copy()]; m = np.zeros(2); v = np.zeros(2)
+    for t in range(1, 60):
+        g = np.array([th[0], 20 * th[1]])
+        if opt == 'sgd': th = th - .09 * g
+        else:
+            m = .9 * m + .1 * g; v = .999 * v + .001 * g ** 2; th = th - .06 * (m / (1 - .9 ** t)) / (np.sqrt(v / (1 - .999 ** t)) + 1e-8)
+        path.append(th.copy())
+    return np.array(path)
+for o, c, lab in (('sgd', R, 'spadek gradientu (zygzak)'), ('adam', G, 'Adam (skala po osiach)')):
+    pa = run(o); ax.plot(pa[:, 0], pa[:, 1], '.-', color=c, ms=3, lw=.8, label=lab)
+ax.plot(0, 0, '*', color=B, ms=12); ax.legend(fontsize=7); ax.set(xlabel='$\\theta_1$ (płaska dolina)', ylabel='$\\theta_2$ (stromo)', title='dwa parametry o różnej skali gradientu'); ax.grid(False)
+save('r23_optymalizacja')
+
+# 24. PR + izolinie F1
+fig, ax = plt.subplots(1, 2, figsize=(9, 3.2))
+prc = np.linspace(0, 1, 100); P_ = 1 - .35 * prc ** 2.5 - .05 * prc; ax[0].plot(prc, P_, color=B); ax[0].fill_between(prc, 0, P_, alpha=.15, color=B)
+ax[0].set(xlabel='czułość $R$', ylabel='precyzja $P$', title='krzywa P–R; pole pod nią = AP', ylim=(0, 1.05)); ax[0].text(.3, .35, 'AP = $\\sum(R_n-R_{n-1})P_n$', fontsize=8)
+Rg, Pg = np.meshgrid(np.linspace(.01, 1, 200), np.linspace(.01, 1, 200)); F = 2 * Rg * Pg / (Rg + Pg)
+cs = ax[1].contourf(Rg, Pg, F, np.linspace(0, 1, 11), cmap='viridis'); plt.colorbar(cs, ax=ax[1], label='$F_1$'); ax[1].plot([.8], [.8], 'o', color='w'); ax[1].annotate('P=R=0,8 → F1=0,8', (.8, .8), (.2, .9), color='w', fontsize=8, arrowprops=dict(arrowstyle='->', color='w'))
+ax[1].plot([.99], [.1], 'o', color='r'); ax[1].annotate('P=0,1, R=0,99 → F1=0,18\n(F1 karze za nierówność)', (.99, .1), (.28, .08), color='w', fontsize=7); ax[1].set(xlabel='$R$', ylabel='$P$', title='F1 = średnia harmoniczna'); ax[1].grid(False)
+save('r24_pr_f1')
+
+# 25. kalibracja i bootstrap
+fig, ax = plt.subplots(1, 2, figsize=(9, 3)); rg = np.random.default_rng(1)
+pc = np.linspace(.05, .95, 10); acc = np.clip(pc + .05 * np.sin(6 * pc) + rg.normal(0, .015, 10), 0, 1)
+ax[0].plot([0, 1], [0, 1], '--', color=K, lw=.8); ax[0].bar(pc, acc, .08, color=B, alpha=.7)
+for a_, b_ in zip(pc, acc): ax[0].plot([a_, a_], [a_, b_], color=R)
+ax[0].set(xlabel='średnie przewidywanie w przedziale', ylabel='faktyczna częstość', title='ECE: średnia ważona czerwonych odcinków\n(liczby tu są poglądowe)'); ax[0].title.set_fontsize(8)
+vals = rg.normal(.86, .08, 80).clip(0, 1); bm = np.array([rg.choice(vals, len(vals)).mean() for _ in range(3000)]); lo, hi = np.percentile(bm, [2.5, 97.5])
+ax[1].hist(bm, 40, color=G, alpha=.8); ax[1].axvline(lo, color=R); ax[1].axvline(hi, color=R); ax[1].axvline(vals.mean(), color=K, ls='--')
+ax[1].set(xlabel='średnia z próby bootstrap', title='bootstrap: 3000 losowań z zwracaniem\nczerwone = 95 % przedział (poglądowe dane)'); ax[1].title.set_fontsize(8)
+save('r25_ece_bootstrap')
+
+print('ok', len(os.listdir(OUT)))

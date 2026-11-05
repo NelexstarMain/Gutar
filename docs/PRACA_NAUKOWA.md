@@ -18,7 +18,7 @@ Główną część dokumentu stanowi jednak wyjaśnienie **całej matematyki** u
 
 * **Część I** (rozdziały M1–M14) uczy matematyki **po kolei**, każdy wzór ma trzy elementy: *intuicję* (po ludzku), *wzór* i *przykład liczbowy*. Wszystkie liczby w przykładach policzono naprawdę.
 * **Część II** (rozdziały 1–12) to właściwa praca naukowa. Na każdy wzór wskazuje, w którym rozdziale Części I jest wyjaśniony (np. „zob. M9”).
-* **Rysunki** (15 szt.) są generowane skryptem `tools/make_figures_paper.py`: rysunek 4 to prawdziwe wyjście kodu cech, rysunki 13–15 pochodzą z plików wyników w `docs/wyniki/`, a rysunki 7 (środek) i 11 są poglądowe i jako takie opisane.
+* **Rysunki** (25 szt.) są generowane skryptem `tools/make_figures_paper.py`: rysunek 4 to prawdziwe wyjście kodu cech, rysunki z wynikami modelu pochodzą z plików w `docs/wyniki/`, a rysunki oznaczone w podpisie jako poglądowe (m.in. dekoder, premia uwagi, optymalizacja, kalibracja, bootstrap) służą tylko do zrozumienia metody i nie zawierają danych z modelu.
 * **Przykłady liczbowe** są oznaczone słowem „Przykład” i można je sprawdzić ręcznie.
 * **Dodatki**: tabela wszystkich 249 219 parametrów (A), ściąga symboli (B).
 * Odwołania do kodu mają postać `plik:funkcja` i dotyczą katalogu `tools/gen6/`.
@@ -52,6 +52,9 @@ gdzie $f_s$ to liczba próbek na sekundę. Najwyższa częstotliwość, jaką da
 **Przykład.** Gen 6 zmienia próbkowanie każdego nagrania na $f_s = 11\,025$ Hz. Nyquist to $11025/2 = 5512{,}5$ Hz. Najwyższa nuta modelu (MIDI 88, 1318,5 Hz) ma jeszcze 4 alikwoty poniżej Nyquista, a wyższe i tak są pomijane (w kodzie: alikwot powyżej $0{,}46 f_s$ = 5071,5 Hz jest zerowany). Jedna próbka trwa $1/11025 \approx 90{,}7\ \mu$s.
 
 *(Dlaczego akurat 11 025 Hz? To 44 100 / 4. Ćwierć standardowego próbkowania płyt CD wystarcza, bo gitara nie niesie użytecznej informacji o wysokości powyżej kilku kHz, a obliczenia są 4× tańsze.)*
+
+![Lewo: ton 2000 Hz próbkowany przy 11 025 Hz (pomarańczowe punkty) jest odtworzony wiernie. Prawo: ton 7000 Hz leży powyżej częstotliwości Nyquista; te same punkty pasują też do czerwonej fali 4025 Hz, więc po próbkowaniu nie da się ich odróżnić („zawijanie”, *aliasing*). Dlatego przed zmianą próbkowania odfiltrowuje się wysokie tony.](rysunki/r16_probkowanie.png){width=100%}
+
 
 ## M2. Wysokość dźwięku: Hz, półtony, centy, MIDI
 
@@ -121,6 +124,9 @@ $$X[k] = \sum_{n=0}^{N-1} x[n]\; e^{-2\pi i\,kn/N}, \qquad k = 0,\dots,N-1.$$
 
 Wzór Eulera $e^{-i\phi} = \cos\phi - i\sin\phi$ pokazuje, co się dzieje: mnożymy sygnał przez falę cosinusową i sinusową o „numerze” $k$ i sumujemy. Jeśli sygnał zawiera ton o tej częstotliwości, wyrazy dodają się w fazie i suma jest duża; w przeciwnym razie plusy i minusy się znoszą. **Moduł** $|X[k]|$ mówi, *jak silny* jest ton $k$ (faza nas tu nie interesuje).
 
+![Sedno DFT na prostym przykładzie: sygnał to suma tonu 3 Hz (amplituda 1) i 5 Hz (amplituda 0,6). Mnożymy go przez falę testową i liczymy średnią (czerwona linia). Dla fali 3 Hz średnia to 0,5, dla 5 Hz 0,3, a dla 4 Hz — zero, bo takiego tonu w sygnale nie ma (plusy i minusy się znoszą). Prawy panel to „widmo” otrzymane z tych trzech średnich (po przemnożeniu przez 2 daje amplitudy 1 i 0,6). W prawdziwej DFT robi się to dla każdej częstotliwości naraz, a dodatkowo z falą cosinusową, żeby uwzględnić fazę.](rysunki/r17_dft.png){width=100%}
+
+
 Biny $k$ odpowiadają częstotliwościom $k f_s/N$. **Rozdzielczość** widma to
 
 $$\Delta f = \frac{f_s}{N}.$$
@@ -179,6 +185,9 @@ $$L = 20\log_{10}\!\big(A + 10^{-9}\big)\ \text{dB}.$$
 
 (Człon $10^{-9}$ chroni przed $\log 0$.) Spadek amplitudy o połowę to $20\log_{10}0{,}5 = -6{,}02$ dB; dziesięciokrotny spadek to $-20$ dB.
 
+![Lewo: decybele zamieniają mnożenie amplitud na dodawanie: połowa amplitudy to −6 dB, jedna dziesiąta −20 dB, jedna setna −40 dB. Prawo: normalizacja $X=(L-L_\text{ref})/60+1$ (tu dla $L_\text{ref}=-6$ dB) i przycięcie do $[0;\,1{,}3]$. Czerwony punkt to przykład z tekstu ($A=0{,}05$).](rysunki/r18_decybele.png){width=100%}
+
+
 **Normalizacja względem nagrania.** Dla każdej grupy kanałów (długie osobno, krótkie osobno) liczymy $L_\text{ref}$ = **99,5. percentyl** wartości $L$ w całym nagraniu (percentyl odporny na pojedyncze skoki; do liczenia używa się co 4. klatki). Wartość końcowa:
 
 $$\boxed{X(t,c,p) = \operatorname{clip}\!\Big(\frac{L - L_\text{ref}}{60} + 1,\ 0,\ 1{,}3\Big)}$$
@@ -206,6 +215,9 @@ $$y_{o}[t,p] = b_o + \sum_{c=1}^{C_\text{in}}\ \sum_{i}\ \sum_{j} W_{o,c}[i,j]\;
 **Przykład.** Trzon sieci: $C_\text{in}=9$, $C_\text{out}=H=48$, filtr $3\times7$: $9\cdot 48\cdot 21+48 = 9120$ parametrów. Filtr obejmuje 3 klatki × 7 binów (7 binów $\approx$ 2,3 półtonu).
 
 **Przykład ręczny (1D, żeby było widać każdy krok).** Dane $x=(1,2,3,4,5)$, filtr o trzech wagach $W=(1,0,-1)$ (indeksy $-1,0,1$), poza krawędziami zera. Wzór daje $y[i]=x[i-1]-x[i+1]$, czyli $y=(0-2,\ 1-3,\ 2-4,\ 3-5,\ 4-0)=(-2,-2,-2,-2,4)$. Z dylatacją $d=2$ ten sam filtr patrzy dalej: $y[i]=x[i-2]-x[i+2]$, więc $y=(0-3,\ 0-4,\ 1-5,\ 2-0,\ 3-0)=(-3,-4,-4,2,3)$. Liczba wag się nie zmieniła (3), a pole widzenia urosło. (W bibliotekach uczenia głębokiego „konwolucja” liczy dokładnie taką sumę bez odwracania filtra, i tu też.)
+
+![Ten sam przykład jako rysunek: element wyjścia $y[2]$ powstaje z dwóch elementów wejścia leżących w odległości $d$ po obu stronach: zielona strzałka to $x[i-d]$ (z plusem), czerwona to $x[i+d]$ (z minusem). Większe $d$ = ten sam filtr patrzy dalej, bez dokładania parametrów.](rysunki/r19_konwolucja.png){width=90%}
+
 
 
 ![Lewo: bin $p$ (czerwony) i siedem miejsc, z których czyta go blok harmoniczny (liczby to przesunięcia w binach). Prawo: filtr czasowy $3\times1$ z dylatacją $d=1,2,4$ pobiera klatki $t,t\pm d$; trzy bloki z rosnącą dylatacją widzą coraz szerszy czas bez dokładania parametrów.](rysunki/r05_blok.png){width=100%}
@@ -236,6 +248,9 @@ $$\operatorname{softmax}(z)_i = \frac{e^{z_i}}{\sum_j e^{z_j}}.$$
 
 Przykład: $z=(0{,}707;\ 0;\ 0{,}707)\Rightarrow e^z=(2{,}03;\ 1;\ 2{,}03)$, suma $5{,}06$, wynik $(0{,}401;\ 0{,}198;\ 0{,}401)$. Wartość $-\infty$ daje wagę 0 (tak „wyłączamy” niedozwolone pozycje).
 
+![Trzy zachowania softmax: (1) wagi z przykładu liczbowego (0,40/0,20/0,40); (2) duże różnice logitów dają niemal „twardy” wybór największego; (3) wartość $-\infty$ (maska) daje wagę dokładnie 0, a reszta dzieli się po równo.](rysunki/r20_softmax.png){width=100%}
+
+
 **GELU** (gładka wersja „ReLU”; przepuszcza duże dodatnie wartości, tłumi ujemne):
 
 $$\operatorname{GELU}(z) = z\cdot\Phi(z) = z\cdot\tfrac12\Big(1+\operatorname{erf}\tfrac{z}{\sqrt2}\Big),$$
@@ -264,6 +279,9 @@ Warstwa uczy się tylko **poprawki** do wejścia, a gradient może płynąć prz
 
 **Dropout** ($p=0{,}1$). Podczas uczenia każdy element jest z prawdopodobieństwem $p$ zerowany, a pozostałe mnożone przez $1/(1-p)$ (żeby średnia się zgadzała). Zapobiega „wykuciu na pamięć”. Przy wnioskowaniu wyłączony.
 
+![Lewo i środek: LayerNorm „zapomina” skalę wektora: $(1,2,3,6)$ i $(100,200,300,600)$ dają ten sam wynik (słupki się pokrywają). Prawo: połączenie resztkowe $y=x+F(x)$: warstwa $F$ dodaje poprawkę, a czerwony „skrót” pozwala gradientowi płynąć bez tłumienia.](rysunki/r21_ln_residual.png){width=100%}
+
+
 ## M9. Uwaga (*attention*)
 
 **Intuicja.** Chcemy, żeby każdy element sekwencji (np. klatka w czasie) mógł **wybrać**, na które inne elementy patrzeć i je uśrednić. Robi to mechanizm „zapytanie–klucz–wartość”: każdy element wystawia *zapytanie* ($q$: „czego szukam?”), *klucz* ($k$: „co oferuję?”) i *wartość* ($v$: „co przekażę, jeśli mnie wybierzesz”). Im bardziej zapytanie pasuje do klucza (duży iloczyn skalarny), tym większą wagę ma wartość.
@@ -286,6 +304,9 @@ wyniki $q\cdot k/\sqrt2 = (0{,}707;\ 0;\ 0{,}707)$ → wagi softmax $(0{,}401;\ 
 $y=0{,}401\,(1,0)+0{,}198\,(0,2)+0{,}401\,(3,3)=(1{,}604;\ 1{,}599)$.
 
 Czytaj to tak: zapytanie $q$ jest podobne do kluczy $k_1$ i $k_3$ (oba mają „1” na pierwszej współrzędnej), więc wynik jest głównie mieszanką $v_1$ i $v_3$; $v_2$ dostało tylko 20 % wagi.
+
+![Uwaga w trzech krokach na minimalnym przykładzie (4 elementy, $d_h=2$; liczby policzone naprawdę). Wyniki $q_i\cdot k_j/\sqrt2$ zamieniamy softmaxem na wagi (każdy wiersz sumuje się do 1) i mieszamy wartości $v_j$ tymi wagami. Przykład: $y_1=0{,}35\,v_1+0{,}17\,v_2+0{,}35\,v_3+0{,}12\,v_4\approx(1{,}53;\,1{,}28)$.](rysunki/r22_uwaga_kroki.png){width=100%}
+
 
 **Przykład z modelu.** Uwaga w czasie dla półtonu E4 w klatce $i=100$: zapytanie $q_{100}$ porównujemy z kluczami klatek 57–143 (okno $\pm43$). Jeśli w klatce 98 zaczęła się ta sama nuta, jej klucz jest podobny i dostaje dużą wagę, więc $y_{100}$ „wie”, że nuta trwa od dwóch klatek. Jeśli klucze klatek 101–110 wskazują ciszę, głowica końca może zareagować. Uwaga między wysokościami dla tej samej klatki porównuje E4 z E3 (odległość 12), A3 (odległość 7), A2 (odległość 19)…
 
@@ -368,6 +389,9 @@ Wartości dla $\eta_0=10^{-3}$: $q=0\to 10^{-3}$; $0{,}25\to 8{,}5\cdot10^{-4}$;
 
 **Przykład użycia gradientu (uproszczony).** Jedna waga $\theta=0{,}50$, $\lambda=10^{-4}$, $\eta=10^{-3}$, po korekcie $\hat m=0{,}2$ i $\hat v=0{,}04$ (czyli $\sqrt{\hat v}=0{,}2$). Krok: $\theta\leftarrow0{,}50-10^{-3}\,(0{,}2/0{,}2+10^{-4}\cdot0{,}5)=0{,}50-10^{-3}\cdot1{,}00005=0{,}49900$. Człon z $\hat m/\sqrt{\hat v}$ ma wielkość $\approx1$, więc waga zmienia się o $\approx\eta$, a rozpad wag dokłada tylko $5\cdot10^{-8}$.
 
+![Dlaczego Adam: funkcja straty o dwóch parametrach, z których jeden ma strome, a drugi płaskie zbocze (poziomice). Zwykły spadek gradientu (czerwony) zygzakuje w poprzek stromej osi, a Adam (zielony) dzieli krok przez skalę gradientu po każdej osi i idzie prościej do minimum (gwiazdka). To rysunek poglądowy, nie dane z uczenia modelu.](rysunki/r23_optymalizacja.png){width=70%}
+
+
 **Przycinanie gradientu.** Jeśli norma całego gradientu $\|g\|_2$ przekracza próg $c=1$, skalujemy go: $g\leftarrow g\cdot\min\!\big(1,\ c/\|g\|_2\big)$. Chroni przed pojedynczym „wybuchowym” krokiem.
 
 **Mieszana precyzja (AMP).** Obliczenia w 16-bitowych liczbach zmiennoprzecinkowych (szybciej, mniej pamięci); strata jest mnożona przez duży współczynnik (*GradScaler*), by małe gradienty nie wyzerowały się w float16, a potem dzielona z powrotem.
@@ -387,6 +411,9 @@ $$\text{pik w czasie: }\quad p(t,s)\ge\theta,\ \ p(t,s)\ge p(t-1,s),\ \ p(t,s)>p
 $$P=\frac{TP}{TP+FP},\qquad R=\frac{TP}{TP+FN},\qquad F_1=\frac{2PR}{P+R}=\frac{2\,TP}{2\,TP+FP+FN}.$$
 
 Precyzja = „jaka część moich nut jest dobra”, czułość = „jaką część prawdziwych nut znalazłem”, F1 = średnia harmoniczna (karze, gdy któraś jest mała). Przykład: $TP=80,FP=20,FN=20\Rightarrow P=R=F_1=0{,}8$.
+
+![Lewo: krzywa precyzja–czułość (przykład poglądowy); pole pod nią to średnia precyzja AP. Prawo: wartość $F_1$ jako funkcja $P$ i $R$: wysoka tylko wtedy, gdy obie są wysokie. Przy $P=0{,}1,\ R=0{,}99$ wychodzi $F_1=0{,}18$, bo średnia harmoniczna „karze” za nierówność.](rysunki/r24_pr_f1.png){width=100%}
+
 
 **Kiedy nuta jest „trafiona”** (standard `mir_eval`, Raffel i in. 2014). Para (nuta wzorca $i$, nuta systemu $j$) jest *dopuszczalna*, gdy jednocześnie:
 
@@ -420,6 +447,9 @@ $$\text{ECE}=\sum_{b=1}^{B}\frac{|\mathcal B_b|}{N}\,\Big|\overline{y}(\mathcal 
 **Mikro i makro.** *Mikro*: sumujemy TP/FP/FN po wszystkich plikach i liczymy jedno F1 (długie pliki ważą więcej). *Makro*: liczymy F1 osobno dla każdego pliku i uśredniamy (każdy plik waży tyle samo; tak raportuje się w publikacjach).
 
 **Przedział ufności bootstrap.** Mamy wyniki $x_1,\dots,x_n$ po plikach. Losujemy $n$ plików **ze zwracaniem**, liczymy średnią; powtarzamy $B$ razy (2000). Środkowe 95 % tych średnich (percentyle 2,5 i 97,5) to przedział ufności średniej. **Sparowany** bootstrap porównuje system A i B na *tych samych* plikach: bootstrapuje różnice $d_i=a_i-b_i$; jeśli przedział różnicy nie zawiera zera (a $p=\Pr(\bar d^*\le0)$ jest małe), poprawa jest istotna statystycznie.
+
+![Lewo: wykres kalibracji (poglądowy). Gdyby „0,8” oznaczało zawsze 80 %, słupki leżałyby na przerywanej przekątnej; ECE to średnia ważona długości czerwonych odcinków. Prawo: bootstrap: wielokrotnie losujemy pliki z zwracaniem i liczymy średnią; środkowe 95 % tych średnich to przedział ufności. Dane obu paneli są syntetyczne, służą tylko do zrozumienia metody.](rysunki/r25_ece_bootstrap.png){width=100%}
+
 
 ## M14. Jak to wszystko się łączy (mapa myślowa)
 
