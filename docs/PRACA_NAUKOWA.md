@@ -16,7 +16,7 @@ Główną część dokumentu stanowi jednak wyjaśnienie **całej matematyki** u
 
 # Jak czytać ten dokument
 
-* **Część I** (rozdziały M1–M14) uczy matematyki **po kolei**, każdy wzór ma trzy elementy: *intuicję* (po ludzku), *wzór* i *przykład liczbowy*. Wszystkie liczby w przykładach policzono naprawdę.
+* **Część I** (rozdziały M0–M14) uczy matematyki **po kolei**; M0 to słownik wszystkich symboli i funkcji, do którego warto wracać, gdy napotkasz nieznany znak, każdy wzór ma trzy elementy: *intuicję* (po ludzku), *wzór* i *przykład liczbowy*. Wszystkie liczby w przykładach policzono naprawdę.
 * **Część II** (rozdziały 1–12) to właściwa praca naukowa. Na każdy wzór wskazuje, w którym rozdziale Części I jest wyjaśniony (np. „zob. M9”).
 * **Rysunki** (25 szt.) są generowane skryptem `tools/make_figures_paper.py`: rysunek 4 to prawdziwe wyjście kodu cech, rysunki z wynikami modelu pochodzą z plików w `docs/wyniki/`, a rysunki oznaczone w podpisie jako poglądowe (m.in. dekoder, premia uwagi, optymalizacja, kalibracja, bootstrap) służą tylko do zrozumienia metody i nie zawierają danych z modelu.
 * **Przykłady liczbowe** są oznaczone słowem „Przykład” i można je sprawdzić ręcznie.
@@ -38,6 +38,150 @@ Oznaczenia, które wracają w całym tekście:
 ---
 
 # CZĘŚĆ I. MATEMATYKA KROK PO KROKU
+
+## M0. Zapis matematyczny: słownik symboli i funkcji
+
+**Po co ten rozdział.** Zanim wejdziemy w dźwięk, wyjaśniamy **każdy znak**, który potem się pojawia. Jeśli w dalszej części trafisz na symbol, którego nie znasz, wróć tutaj (albo do Dodatku B). Każdy symbol ma: zapis, odczyt po polsku, co robi i mały przykład.
+
+### Działania i funkcje podstawowe
+
+| zapis | jak czytać | co znaczy | przykład |
+|---|---|---|---|
+| $a\cdot b$, $a\times b$ | $a$ razy $b$ | mnożenie (kropka w tekście, $\times$ także w *wymiarach*: $T\times 9$) | $3\cdot4=12$ |
+| $\dfrac{a}{b}$, $a/b$ | $a$ przez $b$ | dzielenie | $\dfrac{1}{4}=0{,}25$ |
+| $a^{n}$ | $a$ do potęgi $n$ | $a$ pomnożone $n$ razy; $a^{-n}=1/a^n$; $a^{1/2}=\sqrt a$ | $2^{3}=8,\ 2^{-1}=0{,}5$ |
+| $\sqrt{a}$ | pierwiastek z $a$ | liczba, której kwadrat to $a$ | $\sqrt{16}=4$ |
+| $e,\ e^{x},\ \exp(x)$ | „e do $x$” | $e\approx2{,}718$ (liczba Eulera); $\exp(x)$ to inny zapis $e^x$; rośnie bardzo szybko i jest zawsze dodatnia | $e^0=1,\ e^1=2{,}72$ |
+| $\ln x$ | logarytm naturalny | odwrotność $e^x$: $\ln(e^x)=x$. Mała liczba (np. 0,1) daje dużą ujemną wartość | $\ln 1=0,\ \ln 0{,}1=-2{,}30$ |
+| $\log_b x$ | logarytm przy podstawie $b$ | „do jakiej potęgi podnieść $b$, by dostać $x$”; $\log_2$ — podstawa 2 (oktawy!), $\log_{10}$ — podstawa 10 (decybele) | $\log_2 8=3,\ \log_{10}1000=3$ |
+| $\sin,\ \cos$, $\pi$ | sinus, cosinus, pi | funkcje fal ($\sin$ i $\cos$ przebiegają od −1 do 1 i powtarzają się co $2\pi$); $\pi\approx3{,}14159$ | $\cos0=1,\ \sin(\pi/2)=1$ |
+| $i$ (w $e^{-2\pi i\,kn/N}$) | jednostka urojona | $i^2=-1$; liczby zespolone zapisują „wielkość i fazę” fali | $e^{i\phi}=\cos\phi+i\sin\phi$ |
+| $\lvert x\rvert$ | wartość bezwzględna (moduł) | odległość od zera, bez znaku; dla liczby zespolonej — jej „wielkość” | $\lvert-3\rvert=3$ |
+| $\lVert g\rVert_2$ | norma euklidesowa | „długość wektora”: $\sqrt{g_1^2+g_2^2+\cdots}$ | $\lVert(3,4)\rVert_2=5$ |
+| $\lfloor x\rfloor,\ \lceil x\rceil$ | podłoga, sufit | zaokrąglenie w dół / w górę do całkowitej | $\lfloor121{,}3\rfloor=121,\ \lceil123{,}6\rceil=124$ |
+| $\operatorname{round}(x)$ | zaokrąglenie | do najbliższej całkowitej | $\operatorname{round}(35{,}07)=35$ |
+| $\min(a,b),\ \max(a,b)$ | mniejsza, większa z dwóch | $\max_{k\in A}x_k$ — największa wartość $x_k$ po wszystkich $k$ ze zbioru $A$ | $\max(3,7)=7$ |
+| $\arg\max_i x_i$ | argument maksimum | **numer** $i$, dla którego $x_i$ jest największe (nie sama wartość!) | dla $x=(0{,}1;0{,}7;0{,}2)$: $\arg\max=2$ |
+| $\operatorname{clip}(x,a,b)$ | przycięcie | $\min(\max(x,a),b)$: wartości poniżej $a$ zamienia na $a$, powyżej $b$ na $b$ | $\operatorname{clip}(1{,}7;\,0;\,1{,}3)=1{,}3$ |
+| $\operatorname{erf}(x)$ | funkcja błędu | $\frac{2}{\sqrt\pi}\int_0^x e^{-u^2}du$; „S-kształtna” od −1 do 1; potrzebna tylko do definicji GELU | $\operatorname{erf}(0)=0$ |
+| $\Pr(A)$ | prawdopodobieństwo $A$ | liczba z $[0,1]$: jak często zdarza się $A$ | $\Pr(\text{orzeł})=0{,}5$ |
+
+### Sumy i indeksy
+
+| zapis | znaczenie | przykład |
+|---|---|---|
+| $\displaystyle\sum_{n=1}^{N}a_n$ | **suma**: $a_1+a_2+\cdots+a_N$. Litera pod $\sum$ (tu $n$) to licznik, który „przebiega” podane wartości | $\sum_{n=1}^{3}n^2=1+4+9=14$ |
+| $\displaystyle\sum_{j}a_{ij}$ | suma po wszystkich $j$ (zakres jest oczywisty z kontekstu); $i$ zostaje stałe | $\sum_j a_{ij}=1$ dla wag uwagi |
+| $x_i,\ x[n],\ x_{t,s}$ | **element** ciągu / tablicy o numerze (indeksie) $i$, $n$, albo parze $(t,s)$ | $x=(5,8,2)\Rightarrow x_2=8$ |
+| $x[0..N-1]$, $\dots$, $\cdots$ | zakres „od 0 do $N-1$”; wielokropek = „i tak dalej” | $1,2,\dots,5$ |
+| $h^{(0)}$, $x^{(c)}$ | górny indeks w nawiasie to **etykieta** (numer kanału, warstwy), nie potęga | $h^{(2)}$ — wyjście 2. warstwy |
+
+### Zbiory, wymiary, tensory
+
+| zapis | znaczenie | przykład |
+|---|---|---|
+| $x\in A$ | $x$ **należy do** zbioru $A$ | $3\in\{1,2,3\}$ |
+| $\{1,\dots,6\}$, $[0,1]$, $(0,1)$ | zbiór liczb; $[a,b]$ — przedział z końcami, $(a,b)$ — bez końców | $\sigma(z)\in(0,1)$ |
+| $\mathbb R$ | wszystkie liczby rzeczywiste | |
+| $\mathbb R^{d}$ | **wektor** $d$ liczb rzeczywistych | $z\in\mathbb R^{64}$: 64 liczby |
+| $\mathbb R^{T\times 9\times 159}$ | **tensor** (tablica wielowymiarowa) o podanych rozmiarach wzdłuż kolejnych osi: $T$ klatek, 9 kanałów, 159 binów | to nasze wejście $X$ |
+| $[B,C,T,P]$ | zapis **kształtu** tensora w nawiasach kwadratowych (to samo co $\mathbb R^{B\times C\times T\times P}$) | $[B,48,T,159]$ |
+| $\{0,1\}^5$ | pięcioelementowy ciąg, każdy element to 0 albo 1 | wektor dostępności etykiet |
+| $\mathcal B_b$, $\mathcal V$, $\mathcal N$ | **zbiory** (kaligrafia $\mathcal{A}$ oznacza zbiór lub „wielką” wielkość, np. stratę $\mathcal L$) | $\mathcal V$ — zbiór par z etykietą |
+| $\mathbf p$ | pogrubiona litera = wektor | rozkład softmax $\mathbf p$ |
+| $q^\top k,\ W^\top$ | $\top$ (**transpozycja**): zamiana wiersza na kolumnę. $q^\top k=\sum_l q_lk_l$ to iloczyn skalarny | $(1,2)^\top(3,4)=3+8=11$ |
+| $[\,u\,;v\,]$, $u\,\Vert\,v$ | **sklejenie** (konkatenacja) wektorów lub tensorów: ustawienie jednego za drugim | $(1,2)\Vert(3)=(1,2,3)$ |
+
+### Porównania i strzałki logiczne
+
+| zapis | czytaj | zapis | czytaj |
+|---|---|---|---|
+| $=$ | równa się | $\approx$ | w przybliżeniu |
+| $\le,\ \ge$ | mniejsze lub równe, większe lub równe | $<,\ >$ | mniejsze, większe |
+| $\pm$ | plus minus | $\infty$ | nieskończoność ($-\infty$ — „bardzo bardzo ujemna”) |
+| $\Rightarrow$ | „zatem” (wynika) | $\Leftrightarrow$ | „wtedy i tylko wtedy” |
+| $\to$ | „przechodzi w”, „daje”; też $x\to0$ — „$x$ zbliża się do 0” | $\leftarrow$ | „podstaw”: $\theta\leftarrow\theta-\eta g$ znaczy „nową wartość $\theta$ ustaw na $\theta-\eta g$” |
+| $\ast$ (w $i^\ast$) | gwiazdka = „wybrany/optymalny” (nie mnożenie) | $\underbrace{\cdots}$ | klamra z podpisem: „ta część wyrażenia to …” |
+
+### Dekoracje liter (kreska, daszek, falka)
+
+| zapis | znaczenie |
+|---|---|
+| $\hat m,\ \hat v,\ \hat v_t$ | daszek: **wartość po korekcie** lub **przewidziana** przez model (np. $\hat v$ — przewidziana głośność; $\hat m_t$ — pęd po korekcie obciążenia) |
+| $\bar y,\ \overline{p}$ | kreska: **średnia** |
+| $\tilde h$ | falka: **wersja znormalizowana/przekształcona** zmiennej $h$ |
+| $x_t,\ x_{t-1}$ | $t$ — numer **kroku/klatki** (z kontekstu wiadomo, czy chodzi o krok uczenia, czy klatkę audio) |
+
+### Pochodne i gradient (pełne wyjaśnienie w M11)
+
+| zapis | znaczenie |
+|---|---|
+| $\dfrac{d f}{dx}$ | **pochodna**: „jak szybko $f$ rośnie, gdy zwiększamy $x$” (nachylenie wykresu). Dla $f=x^2$: $\frac{df}{dx}=2x$ |
+| $\dfrac{\partial\mathcal L}{\partial\theta_i}$ | **pochodna cząstkowa**: jak zmienia się $\mathcal L$, gdy ruszamy *tylko* $\theta_i$, a resztę zostawiamy. $\partial$ („d okrągłe”) zamiast $d$ znaczy „zmiennych jest więcej niż jedna” |
+| $\nabla_\theta\mathcal L$ | **gradient** (nabla): wektor wszystkich $\frac{\partial\mathcal L}{\partial\theta_i}$; wskazuje, w którą stronę $\mathcal L$ rośnie najszybciej |
+| $\Delta$ | **różnica / odstęp**: np. $\Delta f=f_s/N$ (odstęp binów), $\Delta=256/f_s$ (czas jednej klatki) |
+
+### Litery greckie i ich role (uwaga na powtarzające się litery!)
+
+Greckich liter jest mało, więc w różnych miejscach oznaczają różne rzeczy. Za każdym razem, gdy wprowadzamy literę, mówimy, co znaczy. Ściąga:
+
+| litera | znaczenia w tym dokumencie |
+|---|---|
+| $\sigma$ | **(a) sigmoid** $\sigma(z)=1/(1+e^{-z})$, gdy ma nawias z argumentem; **(b) odchylenie standardowe** $\sigma$ i wariancja $\sigma^2$ w LayerNorm |
+| $\theta$ | **(a) wszystkie parametry (wagi) sieci**, w optymalizacji (M11); **(b) próg** dekodera: $\theta_\text{on},\theta_\text{fr},\theta_\text{off},\theta_\text{start},\theta_\text{merge}$, w rozdz. 8 (nigdy w tym samym zdaniu) |
+| $\eta$ | tempo uczenia (*learning rate*), $\eta_0$ — wartość początkowa |
+| $\lambda$ | współczynnik rozpadu wag (*weight decay*) w AdamW |
+| $\beta$ | **(a)** $\beta_1,\beta_2$ — stałe wygładzania w Adamie (0,9 i 0,999); **(b)** $\beta_i$ — wyuczone przesunięcie w LayerNorm; **(c)** $\beta_{i,f}$ — wyuczona premia za próg w głowicy tabulatury |
+| $\gamma$ | wyuczona skala w LayerNorm (w stracie ogniskowej $\gamma$ byłoby wykładnikiem, ale w modelu $=0$, więc nieużywane) |
+| $\alpha$ | waga klasy pozytywnej w BCE ($\alpha=4$ dla początków) |
+| $\varepsilon$ | **bardzo mała liczba** (np. $10^{-8}$) dodawana, żeby nie dzielić przez zero |
+| $\mu$ | **średnia** wektora (LayerNorm); w stracie głośności $\mu$ to maska |
+| $\tau$ | czas w **sekundach** (np. $\tau_t$ — środek klatki $t$); odróżnia się od $t$ (numer klatki) |
+| $\phi,\ \Phi$ | $\phi$ — kąt/faza w $e^{-i\phi}$; $\Phi(z)$ — **dystrybuanta rozkładu normalnego** (pole pod „dzwonem” do $z$; $\Phi(0)=0{,}5$) |
+| $\ell,\ \mathcal L$ | $\ell$ — **strata jednego elementu**; $\mathcal L$ — strata **łączna** (średnia po wielu) |
+| $\mathcal U(a,b)$ | **rozkład jednostajny**: losowa liczba z $[a,b]$, każda równie prawdopodobna |
+| $\varnothing$ | „nic” (puste); w tabulaturze oznacza klasę „struna milczy” |
+
+### Powtarzające się litery łacińskie (wymiary i oznaczenia)
+
+| litera | znaczenie |
+|---|---|
+| $f_s$, $N$, $M$ | częstotliwość próbkowania; długość ramki FFT w próbkach ($N$) i po dopełnieniu zerami ($M=4N$) |
+| $T,\ S,\ P,\ C,\ B$ | liczba: klatek czasu, półtonów (53), binów (159), kanałów wejścia (9), nagrań w paczce (*batch*) |
+| $H,\ D$ | liczba kanałów w trzonie (48) i w warstwach kontekstu (64) |
+| $n_h,\ d_h$ | liczba głów uwagi (4) i wymiar jednej głowy ($d_h=D/n_h=16$) |
+| $t,\ s,\ p$ | numer klatki, półtonu, binu; $m$ — numer nuty MIDI; $f$ — częstotliwość (Hz) albo, w tabulaturze, numer progu |
+| $h$ | **uwaga:** $h$ to (a) numer alikwotu $h=1,2,3\ldots$ w rozdz. M3–M5, (b) wektor cech sieci $h_{t,s}$ od rozdz. M8 — z kontekstu wiadomo który |
+| $W$ | **bez indeksu: pół-okno uwagi w czasie ($W=43$ klatek)**; z indeksem ($W_h,W_Q,\dots$): macierz wag |
+| $k$, $K$ | $k$: numer binu FFT, albo przesunięcie $k_h$ w binach, albo klucz $k_j$ w uwadze; $K$: zbiór przesunięć $\{-36,0,\dots,93\}$ albo rozmiar filtra $K_t\times K_p$ |
+| $q,\ k,\ v$ | zapytanie, klucz, wartość w uwadze (M9) |
+| $x,\ y,\ z$ | ogólne: wejście, wyjście, wektor roboczy ($z$ także jako logit) |
+| $X,\ A$ | $X$ — tensor wejściowy HCQT; $A$ — amplituda |
+| $L,\ L_\text{ref}$ | poziom w decybelach i poziom odniesienia (M5); $\delta$ — długość nuty (inna rzecz!) |
+| $a_{ij}$ | waga uwagi z elementu $i$ do $j$; $a_\text{head}$ — dostępność etykiety danej głowicy |
+| $b,\ c$ | obciążenia (stałe dodawane po mnożeniu przez wagi); $b_{j-i}$ — premia zależna od odległości |
+| $o_i$ | wysokość MIDI pustej struny $i$ (40, 45, 50, 55, 59, 64) |
+| $p_\text{on},p_\text{fr},p_\text{off}$ | przewidziane prawdopodobieństwa początku, trwania („brzmi”), końca; $y_\text{on}$ itd. — etykiety prawdy |
+
+### Nazwy funkcji i operacji, które pojawiają się w opisie sieci
+
+Pisane prostą czcionką, bo to nazwy, nie zmienne. Każda ma dalej pełne wyjaśnienie w wskazanym rozdziale.
+
+| nazwa | co robi (jednym zdaniem) | gdzie |
+|---|---|---|
+| $\operatorname{Conv}$, $\operatorname{DW}$ | konwolucja; $\operatorname{DW}$ = konwolucja głębokościowa (każdy kanał osobno) | M6 |
+| $\operatorname{shift}_k(h)$ | **przesunięcie** osi binów o $k$ pozycji: $h[p+k]$, a poza zakresem zera | M3, 5.2 |
+| $\sigma$, $\operatorname{softmax}$, $\operatorname{GELU}$ | funkcje nieliniowe | M7 |
+| $\operatorname{LN}$ (LayerNorm), $\operatorname{LN}_\text{kan}$ | normalizacja po kanałach | M8 |
+| $\operatorname{Drop}$ | dropout: losowe zerowanie elementów | M8 |
+| $\operatorname{FF}$, $\operatorname{MLP}$ | sieć z dwóch warstw liniowych i GELU w środku: $W_2\operatorname{GELU}(W_1z)$ | 5.6, 5.7 |
+| $\operatorname{TA}$, $\operatorname{PA}$ | uwaga w czasie (*time attention*), uwaga między wysokościami (*pitch attention*) | M9, 5.4–5.5 |
+| $\operatorname{sg}(\cdot)$ | *stop-gradient*: wartość przepuszczana do przodu, ale „niewidoczna” dla gradientu | 5.7 |
+| $\operatorname{clip}$ | przycięcie | M5 |
+
+**Ważne o macierzach $W$.** $W$ (z indeksami: $W_h, W_Q, W_K, W_V, W_O, W_1, W_2$) zawsze oznacza **wyuczoną macierz wag**: tabelę liczb, przez którą mnożymy wektor, np. $y=Wx$ znaczy $y_i=\sum_j W_{ij}x_j$. To właśnie te liczby (razem z obciążeniami $b$, $c$) są uczone: razem 249 219 sztuk.
+
+---
 
 ## M1. Dźwięk jako ciąg liczb, próbkowanie
 
@@ -255,7 +399,7 @@ Przykład: $z=(0{,}707;\ 0;\ 0{,}707)\Rightarrow e^z=(2{,}03;\ 1;\ 2{,}03)$, sum
 
 $$\operatorname{GELU}(z) = z\cdot\Phi(z) = z\cdot\tfrac12\Big(1+\operatorname{erf}\tfrac{z}{\sqrt2}\Big),$$
 
-gdzie $\Phi$ to dystrybuanta rozkładu normalnego. $\operatorname{GELU}(-1)=-0{,}159$, $\operatorname{GELU}(0)=0$, $\operatorname{GELU}(1)=0{,}841$, $\operatorname{GELU}(2)=1{,}954$.
+gdzie $\Phi(z)$ to dystrybuanta rozkładu normalnego (pole pod krzywą dzwonową od $-\infty$ do $z$; $\Phi(0)=0{,}5$, $\Phi(1)=0{,}84$), a $\operatorname{erf}$ to funkcja błędu (M0), z której się ją liczy. $\operatorname{GELU}(-1)=-0{,}159$, $\operatorname{GELU}(0)=0$, $\operatorname{GELU}(1)=0{,}841$, $\operatorname{GELU}(2)=1{,}954$.
 
 ![Sigmoid (lewo), GELU z porównaniem do ReLU (środek) oraz kara BCE (prawo): dla $y=1$ kara $-\alpha\ln p$ rośnie bardzo szybko, gdy $p\to0$; czerwona krzywa ($\alpha=4$) leży 4 razy wyżej niż niebieska, więc przeoczenie początku nuty boli mocniej niż fałszywy alarm.](rysunki/r08_funkcje.png){width=100%}
 
@@ -446,7 +590,7 @@ $$\text{ECE}=\sum_{b=1}^{B}\frac{|\mathcal B_b|}{N}\,\Big|\overline{y}(\mathcal 
 
 **Mikro i makro.** *Mikro*: sumujemy TP/FP/FN po wszystkich plikach i liczymy jedno F1 (długie pliki ważą więcej). *Makro*: liczymy F1 osobno dla każdego pliku i uśredniamy (każdy plik waży tyle samo; tak raportuje się w publikacjach).
 
-**Przedział ufności bootstrap.** Mamy wyniki $x_1,\dots,x_n$ po plikach. Losujemy $n$ plików **ze zwracaniem**, liczymy średnią; powtarzamy $B$ razy (2000). Środkowe 95 % tych średnich (percentyle 2,5 i 97,5) to przedział ufności średniej. **Sparowany** bootstrap porównuje system A i B na *tych samych* plikach: bootstrapuje różnice $d_i=a_i-b_i$; jeśli przedział różnicy nie zawiera zera (a $p=\Pr(\bar d^*\le0)$ jest małe), poprawa jest istotna statystycznie.
+**Przedział ufności bootstrap.** Mamy wyniki $x_1,\dots,x_n$ po plikach. Losujemy $n$ plików **ze zwracaniem**, liczymy średnią; powtarzamy $B$ razy (2000). Środkowe 95 % tych średnich (percentyle 2,5 i 97,5) to przedział ufności średniej. **Sparowany** bootstrap porównuje system A i B na *tych samych* plikach: bootstrapuje różnice $d_i=a_i-b_i$; jeśli przedział różnicy nie zawiera zera (a $p=\Pr(\bar d^*\le0)$, czyli odsetek losowań bootstrapu, w których średnia różnica wyszła $\le0$, jest małe), poprawa jest istotna statystycznie.
 
 ![Lewo: wykres kalibracji (poglądowy). Gdyby „0,8” oznaczało zawsze 80 %, słupki leżałyby na przerywanej przekątnej; ECE to średnia ważona długości czerwonych odcinków. Prawo: bootstrap: wielokrotnie losujemy pliki z zwracaniem i liczymy średnią; środkowe 95 % tych średnich to przedział ufności. Dane obu paneli są syntetyczne, służą tylko do zrozumienia metody.](rysunki/r25_ece_bootstrap.png){width=100%}
 
@@ -651,7 +795,7 @@ $$\boxed{\mathcal L=1{,}0\,\mathcal L_\text{on}+1{,}0\,\mathcal L_\text{fr}+0{,}
 * **Paczka:** 16 losowych wycinków po 192 klatki (4,4 s). Źródło losowane z prawdopodobieństwami proporcjonalnymi do wag (klasyka 0,5; GuitarSet 0,3; środowiska 0,2), nagranie proporcjonalnie do długości.
 * **Harmonogram:** rozgrzewka 1000 kroków, potem kosinus (M11). Sesja 1: $\eta_0=10^{-3}\to0$, 36 epok × 1000 kroków. Sesja 3: restart $4\cdot10^{-4}$, dodane dane zestawu 2 i augmentacje (12 epok, zatrzymana przez wczesne zatrzymanie — błąd konfiguracji, jak odnotowano w dzienniku). Sesja 4: wznowienie od epoki 47, $3\cdot10^{-4}\to0$ kosinusem od *czasu* (harmonogram kończy się dokładnie w terminie), 49 epok. Razem **97 epok**, 7,3 + 2,9 + 11 ≈ 21 h uczenia.
 * **Wybór modelu:** epoka o najwyższym F1 nut na stałej próbie walidacyjnej 180 nagrań ze wszystkich źródeł: epoka 29 (89,42 %) w sesji 1, epoka **81 (90,27 %)** w sesji 4 — to jest model końcowy.
-* **Augmentacje** (każda losowana niezależnie): zmiana poziomu $\pm6$ dB (dodanie $g/60$ do wartości znormalizowanych), szum gaussowski $\sigma=0{,}02$, maskowanie pasm i chwil (SpecAugment), zmiana tempa $\times\exp(\mathcal U(-\ln1{,}12,\ln1{,}12))$ z $p=0{,}5$ przez rozciągnięcie wycinka i map, **rozstrojenie** (przesunięcie cech o $\pm1$ bin = ±33 ¢, etykiety bez zmian; $p=0{,}3$), **niedokładne etykiety** (przesunięcie początków/końców o ±1 klatkę; $p=0{,}3$), transpozycja o ±2 półtony ($p=0{,}3$; tabulatura wtedy nieznana).
+* **Augmentacje** (każda losowana niezależnie): zmiana poziomu $\pm6$ dB (dodanie $g/60$ do wartości znormalizowanych), szum gaussowski $\sigma=0{,}02$, maskowanie pasm i chwil (SpecAugment), zmiana tempa $\times\exp(\mathcal U(-\ln1{,}12,\ln1{,}12))$ (losowa liczba z tego przedziału, każda równie prawdopodobna; zob. M0) z $p=0{,}5$ przez rozciągnięcie wycinka i map, **rozstrojenie** (przesunięcie cech o $\pm1$ bin = ±33 ¢, etykiety bez zmian; $p=0{,}3$), **niedokładne etykiety** (przesunięcie początków/końców o ±1 klatkę; $p=0{,}3$), transpozycja o ±2 półtony ($p=0{,}3$; tabulatura wtedy nieznana).
 
 # 8. Dekoder
 
@@ -698,7 +842,7 @@ Największy wkład dało wyłączenie nut bez wykrytego początku ($+0{,}75$ pkt
 Wszystkie miary (M13) są liczone przez ten sam moduł numpy, który przyjmuje listy nut, więc tak samo ocenia Gen 6 i wyniki innych generacji silnika. Implementacje porównano z `mir_eval` 0.8 z dokładnością $10^{-9}$ (testy automatyczne). Raportujemy:
 
 * **F1 nut** (początek ±50 ms, wysokość ±50 ¢) — główna miara;
-* **F1 nut z końcem** (dodatkowo koniec w tolerancji $\max(50\text{ ms},0{,}2L)$);
+* **F1 nut z końcem** (dodatkowo koniec w tolerancji $\max(50\text{ ms},0{,}2\,\delta)$, gdzie $\delta$ to długość nuty wzorca w sekundach);
 * **F1 klatkowe** (siatka 10 ms);
 * mediana błędu początku, AP map, ECE, pokrycie czasu nuty, błąd oktawowy;
 * tabulatura: F1 par (struna, próg), odsetek poprawnych strun, TDR (Wiggins i Kim 2019);
@@ -835,7 +979,7 @@ Konfiguracja końcowa: $H=48$, $D=64$, $n_h=4$, $S=53$, $W=43$. Obliczone ręczn
 | AdamW | $\theta\leftarrow\theta-\eta(\hat m/(\sqrt{\hat v}+\varepsilon)+\lambda\theta)$ |
 | kosinus | $\eta=\eta_0\tfrac12(1+\cos\pi q)$ |
 | F1 | $2TP/(2TP+FP+FN)$ |
-| tolerancja końca | $\max(50\,\text{ms},\,0{,}2\cdot L_\text{ref})$ |
+| tolerancja końca | $\max(50\,\text{ms},\,0{,}2\cdot\delta)$ ($\delta$ — długość nuty wzorca) |
 | AP | $\sum_n(R_n-R_{n-1})P_n$ |
 | ECE | $\sum_b\tfrac{|\mathcal B_b|}{N}\,|\bar y_b-\bar p_b|$ |
 | pole widzenia | $\text{halo}=1+\sum d_i\lfloor k/2\rfloor+n_\text{ctx}\cdot2W=180$ klatek |
