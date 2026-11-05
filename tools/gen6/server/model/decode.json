@@ -1,0 +1,471 @@
+{
+ "decode": {
+  "th_onset": 0.6,
+  "th_onset_frame": 0.1,
+  "th_frame": 0.6,
+  "th_offset": 0.8,
+  "th_start": 1.01,
+  "min_frames": 2,
+  "gap_frames": 2,
+  "merge_sec": 0.08,
+  "min_dur": 0.06
+ },
+ "default": {
+  "th_onset": 0.5,
+  "th_onset_frame": 0.3,
+  "th_frame": 0.5,
+  "th_offset": 0.5,
+  "th_start": 0.7,
+  "min_frames": 2,
+  "gap_frames": 1,
+  "merge_sec": 0.03,
+  "min_dur": 0.06
+ },
+ "objective_start": 79.56954662702015,
+ "objective_best": 80.86523673350926,
+ "per_source": {
+  "GuitarSet": 81.2149949326758,
+  "klasyka": 79.04464246021487,
+  "srodowiska": 83.80690888176497
+ },
+ "val_files": 222,
+ "history": [
+  {
+   "param": null,
+   "value": null,
+   "objective": 79.56954662702015
+  },
+  {
+   "param": "th_onset",
+   "value": 0.3,
+   "objective": 78.422161409321,
+   "pass": 0
+  },
+  {
+   "param": "th_onset",
+   "value": 0.4,
+   "objective": 79.09575981722786,
+   "pass": 0
+  },
+  {
+   "param": "th_onset",
+   "value": 0.6,
+   "objective": 79.70856940186812,
+   "pass": 0
+  },
+  {
+   "param": "th_onset",
+   "value": 0.7,
+   "objective": 79.65768822301294,
+   "pass": 0
+  },
+  {
+   "param": "th_onset",
+   "value": 0.8,
+   "objective": 79.15374720007267,
+   "pass": 0
+  },
+  {
+   "param": "th_onset",
+   "value": 0.9,
+   "objective": 77.98398897362169,
+   "pass": 0
+  },
+  {
+   "param": "th_onset_frame",
+   "value": 0.1,
+   "objective": 79.72273776490124,
+   "pass": 0
+  },
+  {
+   "param": "th_onset_frame",
+   "value": 0.2,
+   "objective": 79.71731539924589,
+   "pass": 0
+  },
+  {
+   "param": "th_onset_frame",
+   "value": 0.4,
+   "objective": 79.651378457508,
+   "pass": 0
+  },
+  {
+   "param": "th_onset_frame",
+   "value": 0.5,
+   "objective": 79.63904303299753,
+   "pass": 0
+  },
+  {
+   "param": "th_frame",
+   "value": 0.3,
+   "objective": 79.78597790894331,
+   "pass": 0
+  },
+  {
+   "param": "th_frame",
+   "value": 0.4,
+   "objective": 79.8027420322926,
+   "pass": 0
+  },
+  {
+   "param": "th_frame",
+   "value": 0.6,
+   "objective": 79.54000033056245,
+   "pass": 0
+  },
+  {
+   "param": "th_frame",
+   "value": 0.7,
+   "objective": 78.9601876398972,
+   "pass": 0
+  },
+  {
+   "param": "th_offset",
+   "value": 0.3,
+   "objective": 79.03638442666843,
+   "pass": 0
+  },
+  {
+   "param": "th_offset",
+   "value": 0.4,
+   "objective": 79.55847443599676,
+   "pass": 0
+  },
+  {
+   "param": "th_offset",
+   "value": 0.6,
+   "objective": 79.76716964432225,
+   "pass": 0
+  },
+  {
+   "param": "th_offset",
+   "value": 0.7,
+   "objective": 79.72941517534451,
+   "pass": 0
+  },
+  {
+   "param": "th_offset",
+   "value": 0.8,
+   "objective": 79.7696880649188,
+   "pass": 0
+  },
+  {
+   "param": "th_start",
+   "value": 0.5,
+   "objective": 79.03004900684618,
+   "pass": 0
+  },
+  {
+   "param": "th_start",
+   "value": 0.6,
+   "objective": 79.46923091443057,
+   "pass": 0
+  },
+  {
+   "param": "th_start",
+   "value": 0.8,
+   "objective": 80.01751473314549,
+   "pass": 0
+  },
+  {
+   "param": "th_start",
+   "value": 0.9,
+   "objective": 80.17784178550778,
+   "pass": 0
+  },
+  {
+   "param": "th_start",
+   "value": 1.01,
+   "objective": 80.55432391709917,
+   "pass": 0
+  },
+  {
+   "param": "min_frames",
+   "value": 1,
+   "objective": 80.48066548476656,
+   "pass": 0
+  },
+  {
+   "param": "min_frames",
+   "value": 3,
+   "objective": 80.56770328583924,
+   "pass": 0
+  },
+  {
+   "param": "min_frames",
+   "value": 4,
+   "objective": 80.28685325217667,
+   "pass": 0
+  },
+  {
+   "param": "gap_frames",
+   "value": 0,
+   "objective": 80.09924633615672,
+   "pass": 0
+  },
+  {
+   "param": "gap_frames",
+   "value": 2,
+   "objective": 80.58801370688428,
+   "pass": 0
+  },
+  {
+   "param": "gap_frames",
+   "value": 3,
+   "objective": 80.580140213529,
+   "pass": 0
+  },
+  {
+   "param": "merge_sec",
+   "value": 0.02,
+   "objective": 80.58801370688428,
+   "pass": 0
+  },
+  {
+   "param": "merge_sec",
+   "value": 0.05,
+   "objective": 80.58801370688428,
+   "pass": 0
+  },
+  {
+   "param": "merge_sec",
+   "value": 0.08,
+   "objective": 80.64350633488473,
+   "pass": 0
+  },
+  {
+   "param": "min_dur",
+   "value": 0.03,
+   "objective": 80.64350633488473,
+   "pass": 0
+  },
+  {
+   "param": "min_dur",
+   "value": 0.1,
+   "objective": 80.46512538196808,
+   "pass": 0
+  },
+  {
+   "param": "min_dur",
+   "value": 0.15,
+   "objective": 78.47937875753423,
+   "pass": 0
+  },
+  {
+   "param": "th_onset",
+   "value": 0.3,
+   "objective": 79.36324877692178,
+   "pass": 1
+  },
+  {
+   "param": "th_onset",
+   "value": 0.4,
+   "objective": 80.07309870912388,
+   "pass": 1
+  },
+  {
+   "param": "th_onset",
+   "value": 0.5,
+   "objective": 80.52606662490366,
+   "pass": 1
+  },
+  {
+   "param": "th_onset",
+   "value": 0.7,
+   "objective": 80.44127931990974,
+   "pass": 1
+  },
+  {
+   "param": "th_onset",
+   "value": 0.8,
+   "objective": 79.02630022855934,
+   "pass": 1
+  },
+  {
+   "param": "th_onset",
+   "value": 0.9,
+   "objective": 63.23477028176796,
+   "pass": 1
+  },
+  {
+   "param": "th_onset_frame",
+   "value": 0.2,
+   "objective": 80.60258775763829,
+   "pass": 1
+  },
+  {
+   "param": "th_onset_frame",
+   "value": 0.3,
+   "objective": 80.50768096223251,
+   "pass": 1
+  },
+  {
+   "param": "th_onset_frame",
+   "value": 0.4,
+   "objective": 80.02899891682605,
+   "pass": 1
+  },
+  {
+   "param": "th_onset_frame",
+   "value": 0.5,
+   "objective": 78.95725701404568,
+   "pass": 1
+  },
+  {
+   "param": "th_frame",
+   "value": 0.3,
+   "objective": 80.51831534176203,
+   "pass": 1
+  },
+  {
+   "param": "th_frame",
+   "value": 0.5,
+   "objective": 80.70872930168437,
+   "pass": 1
+  },
+  {
+   "param": "th_frame",
+   "value": 0.6,
+   "objective": 80.76218952485497,
+   "pass": 1
+  },
+  {
+   "param": "th_frame",
+   "value": 0.7,
+   "objective": 80.66102231483232,
+   "pass": 1
+  },
+  {
+   "param": "th_offset",
+   "value": 0.3,
+   "objective": 80.71020188743789,
+   "pass": 1
+  },
+  {
+   "param": "th_offset",
+   "value": 0.4,
+   "objective": 80.75728395667583,
+   "pass": 1
+  },
+  {
+   "param": "th_offset",
+   "value": 0.6,
+   "objective": 80.73006551586917,
+   "pass": 1
+  },
+  {
+   "param": "th_offset",
+   "value": 0.7,
+   "objective": 80.77530610814209,
+   "pass": 1
+  },
+  {
+   "param": "th_offset",
+   "value": 0.8,
+   "objective": 80.82065952676058,
+   "pass": 1
+  },
+  {
+   "param": "th_start",
+   "value": 0.5,
+   "objective": 79.47030425061332,
+   "pass": 1
+  },
+  {
+   "param": "th_start",
+   "value": 0.6,
+   "objective": 79.62120968368852,
+   "pass": 1
+  },
+  {
+   "param": "th_start",
+   "value": 0.7,
+   "objective": 80.06912055291814,
+   "pass": 1
+  },
+  {
+   "param": "th_start",
+   "value": 0.8,
+   "objective": 80.32027779547347,
+   "pass": 1
+  },
+  {
+   "param": "th_start",
+   "value": 0.9,
+   "objective": 80.47798628625713,
+   "pass": 1
+  },
+  {
+   "param": "min_frames",
+   "value": 1,
+   "objective": 80.70108963559319,
+   "pass": 1
+  },
+  {
+   "param": "min_frames",
+   "value": 2,
+   "objective": 80.86523673350926,
+   "pass": 1
+  },
+  {
+   "param": "min_frames",
+   "value": 4,
+   "objective": 80.11333328683557,
+   "pass": 1
+  },
+  {
+   "param": "gap_frames",
+   "value": 0,
+   "objective": 77.49376372358806,
+   "pass": 1
+  },
+  {
+   "param": "gap_frames",
+   "value": 1,
+   "objective": 80.85712464780008,
+   "pass": 1
+  },
+  {
+   "param": "gap_frames",
+   "value": 3,
+   "objective": 80.83491708870534,
+   "pass": 1
+  },
+  {
+   "param": "merge_sec",
+   "value": 0.02,
+   "objective": 80.78667345364437,
+   "pass": 1
+  },
+  {
+   "param": "merge_sec",
+   "value": 0.03,
+   "objective": 80.78667345364437,
+   "pass": 1
+  },
+  {
+   "param": "merge_sec",
+   "value": 0.05,
+   "objective": 80.81260523283828,
+   "pass": 1
+  },
+  {
+   "param": "min_dur",
+   "value": 0.03,
+   "objective": 80.84847893518662,
+   "pass": 1
+  },
+  {
+   "param": "min_dur",
+   "value": 0.1,
+   "objective": 80.69503774309513,
+   "pass": 1
+  },
+  {
+   "param": "min_dur",
+   "value": 0.15,
+   "objective": 78.63705255880019,
+   "pass": 1
+  }
+ ]
+}

@@ -1,0 +1,343 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Opis nut</title>
+<style>
+:root{--bg:#fff;--fg:#1c1c1c;--mut:#666;--bar:#f1f1f1;--bd:#d6d6d6;--acc:#0b6bcb;--acc-fg:#fff;--note:rgba(255,170,0,.50);--notebd:#e08a00;--sel:#00a85d;--cur:#e5262a}
+@media(prefers-color-scheme:dark){:root{--bg:#141414;--fg:#e8e8e8;--mut:#9a9a9a;--bar:#222;--bd:#3a3a3a;--acc:#4da3ff;--acc-fg:#08121d;--note:rgba(255,190,60,.45);--notebd:#ffb43c;--sel:#35d68a;--cur:#ff5a5e}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.4 system-ui,sans-serif}
+header{padding:10px 16px;border-bottom:1px solid var(--bd);background:var(--bar);display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center}
+h1{font-size:16px;margin:0 8px 0 0}
+button,select,label.btn{font:inherit;color:var(--fg);background:var(--bg);border:1px solid var(--bd);border-radius:6px;padding:5px 10px;cursor:pointer}
+button:hover,label.btn:hover{border-color:var(--acc)}
+button.main{background:var(--acc);color:var(--acc-fg);border-color:var(--acc)}
+input[type=file]{display:none}
+label.chk{display:flex;gap:5px;align-items:center;color:var(--mut)}
+#status{padding:6px 16px;color:var(--mut);min-height:30px}
+#wrap{padding:0 16px 16px}
+canvas{display:block;width:100%;border:1px solid var(--bd);border-radius:6px;touch-action:none;cursor:crosshair}
+#pos{width:100%;margin:8px 0}
+details{padding:0 16px 16px;color:var(--mut)}
+summary{cursor:pointer}
+kbd{border:1px solid var(--bd);border-radius:4px;padding:0 5px;background:var(--bar)}
+</style>
+</head>
+<body>
+<header>
+  <h1>Opis nut</h1>
+  <label class="btn">1. Nagranie (WAV)<input id="fWav" type="file" accept="audio/*,.wav"></label>
+  <label class="btn">Wczytaj opis (CSV)<input id="fCsv" type="file" accept=".csv,.tsv,.txt"></label>
+  <button id="bPlay" class="main" disabled>▶ Odtwórz (spacja)</button>
+  <select id="rate" title="Prędkość odtwarzania"><option value="1">1×</option><option value="0.75">0,75×</option><option value="0.5">0,5×</option></select>
+  <label class="chk" title="0 % = tylko nagranie, 100 % = tylko dźwięk nut z opisu"><span id="mixL">nagranie</span><input id="mix" type="range" min="0" max="100" value="50" style="width:130px"><span id="mixR">nuty</span><span id="mixV" style="min-width:5.5em"></span></label>
+  <label class="chk"><input id="cOn" type="checkbox"> tylko początki (bez końców)</label>
+  <button id="bMinus" title="Oddal">−</button><button id="bPlus" title="Przybliż">+</button>
+  <button id="bCsv" disabled>2. Zapisz CSV</button>
+  <button id="bMid" disabled>Zapisz MIDI</button>
+</header>
+<div id="status">Wczytaj nagranie WAV. Potem przeciągnij myszą po widmie: poziomo = czas i długość nuty, pionowo = wysokość.</div>
+<div id="wrap">
+  <input id="pos" type="range" min="0" max="1000" value="0" disabled>
+  <canvas id="cv"></canvas>
+</div>
+<details>
+  <summary>Jak opisywać</summary>
+  <p><b>Dodaj nutę:</b> wciśnij na pustym miejscu i przeciągnij w prawo (początek = gdzie wcisnąłeś, koniec = gdzie puścisz). Samo kliknięcie daje nutę 0,25 s.
+  <b>Przesuń:</b> przeciągnij nutę. <b>Zmień koniec:</b> przeciągnij jej prawą krawędź. <b>Usuń:</b> zaznacz i wciśnij <kbd>Delete</kbd>.
+  <b>Przewijanie:</b> suwak nad widmem, albo kółko myszy. <b>Przybliżanie:</b> <kbd>Ctrl</kbd> + kółko albo +/−. <b>Przewiń odtwarzanie:</b> kliknij pasek czasu u góry.</p>
+  <p><b>Suwak „nagranie / nuty”:</b> ile słychać oryginału, a ile dźwięku nut z opisu (0 % = tylko nagranie, 100 % = tylko nuty). Przy 50/50 łatwo usłyszeć, czy nuty pokrywają się z nagraniem. Działa też w trakcie odtwarzania.</p>
+  <p>Klawisze: <kbd>Spacja</kbd> odtwarzanie, <kbd>Delete</kbd> usuń, <kbd>↑</kbd><kbd>↓</kbd> wysokość zaznaczonej nuty, <kbd>←</kbd><kbd>→</kbd> przesunięcie o 10 ms (z <kbd>Shift</kbd> o 50 ms), <kbd>Ctrl+Z</kbd> cofnij.</p>
+  <p>Wysokość to numer MIDI (E2 = 40 to najniższa struna gitary). Wersję roboczą strona zapamiętuje w przeglądarce, ale na koniec zawsze zapisz CSV.
+  Tryb „tylko początki” zapisuje bez kolumny końców: model uczy się wtedy tylko początków nut. Z końcami uczy się lepiej.
+  Pliki zapisuj pod tą samą nazwą co nagranie (nagranie.wav + nagranie.csv).</p>
+</details>
+<script>
+'use strict';
+const LO = 36, NS = 53, HOP = 512, FFTN = 4096, SR = 11025, GUT = 46, RULER = 22, RH = 11;
+const NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+const $ = id => document.getElementById(id);
+const S = {buf: null, name: '', dur: 0, spec: null, notes: [], sel: -1, t0: 0, pps: 100, undo: [], play: null, cursor: 0, drag: null};
+let actx = null;
+const cv = $('cv'), g = cv.getContext('2d');
+const noteName = m => NAMES[m % 12] + (Math.floor(m / 12) - 1);
+const tx = t => GUT + (t - S.t0) * S.pps;
+const xt = x => S.t0 + (x - GUT) / S.pps;
+const ty = p => RULER + (NS - 1 - (p - LO)) * RH;
+const pitchAt = y => Math.max(LO, Math.min(LO + NS - 1, LO + NS - 1 - Math.floor((y - RULER) / RH)));
+const setStatus = m => { $('status').textContent = m; };
+
+// ---------------------------------------------------------------- widmo
+function fft(re, im) {
+  const n = re.length;
+  for (let i = 1, j = 0; i < n; i++) { let b = n >> 1; for (; j & b; b >>= 1) j ^= b; j ^= b; if (i < j) { let t = re[i]; re[i] = re[j]; re[j] = t; t = im[i]; im[i] = im[j]; im[j] = t; } }
+  for (let len = 2; len <= n; len <<= 1) {
+    const ang = -2 * Math.PI / len, wr = Math.cos(ang), wi = Math.sin(ang), h = len >> 1;
+    for (let i = 0; i < n; i += len) {
+      let cr = 1, ci = 0;
+      for (let k = 0; k < h; k++) {
+        const a = i + k, b = a + h, xr = re[b] * cr - im[b] * ci, xi = re[b] * ci + im[b] * cr;
+        re[b] = re[a] - xr; im[b] = im[a] - xi; re[a] += xr; im[a] += xi;
+        const t = cr * wr - ci * wi; ci = cr * wi + ci * wr; cr = t;
+      }
+    }
+  }
+}
+async function computeSpec(x) {
+  const nfr = Math.max(1, Math.floor(x.length / HOP)), win = new Float64Array(FFTN);
+  for (let i = 0; i < FFTN; i++) win[i] = 0.5 - 0.5 * Math.cos(2 * Math.PI * i / FFTN);
+  const lo = [], hi = [];
+  for (let s = 0; s < NS; s++) {
+    const f = 440 * Math.pow(2, (LO + s - 69) / 12);
+    const a = Math.floor(f * Math.pow(2, -1 / 24) * FFTN / SR), b = Math.ceil(f * Math.pow(2, 1 / 24) * FFTN / SR);
+    lo.push(a); hi.push(Math.max(a, b));
+  }
+  const data = new Float32Array(nfr * NS), re = new Float64Array(FFTN), im = new Float64Array(FFTN);
+  for (let t = 0; t < nfr; t++) {
+    const c = t * HOP, st = c - FFTN / 2;
+    for (let i = 0; i < FFTN; i++) { const k = st + i; re[i] = (k >= 0 && k < x.length ? x[k] : 0) * win[i]; im[i] = 0; }
+    fft(re, im);
+    for (let s = 0; s < NS; s++) {
+      let m = 0;
+      for (let k = lo[s]; k <= hi[s]; k++) { const v = re[k] * re[k] + im[k] * im[k]; if (v > m) m = v; }
+      data[t * NS + s] = 10 * Math.log10(m + 1e-12);
+    }
+    if (t % 40 === 0) { setStatus('Liczę widmo: ' + Math.round(100 * t / nfr) + ' %'); await new Promise(r => setTimeout(r, 0)); }
+  }
+  const sorted = Float32Array.from(data).sort(), ref = sorted[Math.floor(sorted.length * 0.995)];
+  for (let i = 0; i < data.length; i++) data[i] = Math.max(0, Math.min(1, (data[i] - ref) / 60 + 1));
+  return {data, nfr, fps: SR / HOP};
+}
+
+// ---------------------------------------------------------------- wczytywanie
+async function loadWav(file) {
+  setStatus('Wczytuję…');
+  actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+  const ab = await file.arrayBuffer();
+  S.buf = await actx.decodeAudioData(ab);
+  S.name = file.name.replace(/\.[^.]+$/, ''); S.dur = S.buf.duration;
+  const off = new OfflineAudioContext(1, Math.max(1, Math.ceil(S.dur * SR)), SR), src = off.createBufferSource();
+  src.buffer = S.buf; src.connect(off.destination); src.start();
+  const mono = (await off.startRendering()).getChannelData(0);
+  S.spec = await computeSpec(mono);
+  S.notes = []; S.sel = -1; S.t0 = 0; S.cursor = 0; S.undo = [];
+  try { const sv = localStorage.getItem(key()); if (sv) { S.notes = JSON.parse(sv); setStatus('Przywrócono ' + S.notes.length + ' nut z zapisu w przeglądarce.'); } else ready(); } catch (e) { ready(); }
+  for (const id of ['bPlay', 'bCsv', 'bMid', 'pos']) $(id).disabled = false;
+  fit(); draw();
+}
+const ready = () => setStatus(S.name + ': ' + S.dur.toFixed(1) + ' s. Przeciągnij myszą po widmie, żeby dodać nutę.');
+const key = () => 'gutar_ann_' + S.name + '_' + (S.buf ? Math.round(S.dur * 1000) : 0);
+function save() { try { localStorage.setItem(key(), JSON.stringify(S.notes)); } catch (e) {} }
+function parseCsv(txt) {
+  const rows = txt.split(/\r?\n/).map(r => r.trim()).filter(r => r && !r.startsWith('#')).map(r => r.split(/[,;\t]/).map(c => c.trim()));
+  if (!rows.length) return [];
+  let head = null;
+  if (isNaN(parseFloat(rows[0][0]))) head = rows.shift().map(h => h.toLowerCase());
+  const ix = n => head ? head.indexOf(n) : -1;
+  let ci = {on: ix('onset'), off: ix('offset'), p: ix('pitch')};
+  if (!head) ci = rows[0].length >= 3 ? {on: 0, off: 1, p: 2} : {on: 0, off: -1, p: 1};
+  if (ci.on < 0 || ci.p < 0) throw new Error('w CSV brakuje kolumn onset i pitch');
+  return rows.map(r => {
+    const on = parseFloat(r[ci.on]), of = ci.off >= 0 ? parseFloat(r[ci.off]) : NaN;
+    return {on, off: of > on ? of : on + 0.25, p: Math.round(parseFloat(r[ci.p]))};
+  }).filter(n => isFinite(n.on) && isFinite(n.p));
+}
+
+// ---------------------------------------------------------------- rysowanie
+function fit() {
+  const w = Math.max(300, $('wrap').clientWidth - 2), dpr = window.devicePixelRatio || 1;
+  cv.width = Math.round(w * dpr); cv.height = Math.round((RULER + NS * RH) * dpr);
+  cv.style.height = (RULER + NS * RH) + 'px'; g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  cv._w = w;
+}
+function draw() {
+  const w = cv._w || 800, H = RULER + NS * RH, css = getComputedStyle(document.documentElement);
+  const c = n => css.getPropertyValue(n).trim();
+  g.clearRect(0, 0, w, H); g.fillStyle = c('--bg'); g.fillRect(0, 0, w, H);
+  const pw = Math.max(1, w - GUT);
+  if (S.spec) {
+    const im = g.createImageData(pw, NS), {data, nfr, fps} = S.spec;
+    for (let x = 0; x < pw; x++) {
+      const t = xt(GUT + x), fr = Math.floor(t * fps);
+      for (let s = 0; s < NS; s++) {
+        const v = fr >= 0 && fr < nfr ? data[fr * NS + s] : 0, o = ((NS - 1 - s) * pw + x) * 4;
+        const u = v * v; im.data[o] = 20 + 235 * Math.min(1, u * 1.6); im.data[o + 1] = 25 + 200 * u * u; im.data[o + 2] = 60 + 120 * (1 - u) * v; im.data[o + 3] = 255;
+      }
+    }
+    const tmp = draw._t || (draw._t = document.createElement('canvas')); tmp.width = pw; tmp.height = NS;
+    tmp.getContext('2d').putImageData(im, 0, 0);
+    g.imageSmoothingEnabled = false; g.drawImage(tmp, GUT, RULER, pw, NS * RH);
+  }
+  g.font = '10px system-ui'; g.textBaseline = 'middle';
+  for (let s = 0; s < NS; s++) {
+    const m = LO + s, y = ty(m);
+    if (m % 12 === 4 || m % 12 === 0) { g.strokeStyle = 'rgba(128,128,128,.35)'; g.beginPath(); g.moveTo(GUT, y + RH); g.lineTo(w, y + RH); g.stroke(); }
+    if (m % 12 === 0 || m % 12 === 4 || m % 12 === 7) { g.fillStyle = c('--mut'); g.fillText(noteName(m) + ' ' + m, 3, y + RH / 2); }
+  }
+  g.fillStyle = c('--bar'); g.fillRect(GUT, 0, pw, RULER);
+  g.fillStyle = c('--mut'); g.textBaseline = 'top';
+  const step = S.pps >= 200 ? 0.5 : S.pps >= 80 ? 1 : S.pps >= 40 ? 2 : 5;
+  for (let t = Math.ceil(S.t0 / step) * step; tx(t) < w; t += step) { const x = tx(t); g.fillRect(x, RULER - 6, 1, 6); g.fillText(t.toFixed(step < 1 ? 1 : 0) + ' s', x + 3, 4); }
+  S.notes.forEach((n, i) => {
+    const x0 = tx(n.on), x1 = Math.max(x0 + 3, tx(n.off)), y = ty(n.p);
+    if (x1 < GUT || x0 > w) return;
+    g.fillStyle = c('--note'); g.fillRect(Math.max(GUT, x0), y, x1 - Math.max(GUT, x0), RH);
+    g.strokeStyle = i === S.sel ? c('--sel') : c('--notebd'); g.lineWidth = i === S.sel ? 2 : 1; g.strokeRect(Math.max(GUT, x0) + .5, y + .5, x1 - Math.max(GUT, x0), RH - 1);
+    g.fillStyle = c('--notebd'); g.fillRect(x0, y, 2, RH);
+  });
+  if (S.cursor >= S.t0) { const x = tx(S.cursor); if (x >= GUT && x <= w) { g.fillStyle = c('--cur'); g.fillRect(x, 0, 2, H); } }
+  g.fillStyle = c('--bar'); g.fillRect(0, 0, GUT, RULER);
+  const pos = $('pos'); pos.max = Math.max(1, Math.round(S.dur * 100)); pos.value = Math.round(S.t0 * 100);
+}
+
+// ---------------------------------------------------------------- notatki
+function push() { S.undo.push(JSON.stringify(S.notes)); if (S.undo.length > 100) S.undo.shift(); }
+function changed() { save(); draw(); }
+function beep(p, dur = 0.2) {
+  if (!actx) return; const o = actx.createOscillator(), gn = actx.createGain(), t = actx.currentTime;
+  o.type = 'triangle'; o.frequency.value = 440 * Math.pow(2, (p - 69) / 12);
+  gn.gain.setValueAtTime(0, t); gn.gain.linearRampToValueAtTime(0.18, t + 0.01); gn.gain.exponentialRampToValueAtTime(0.001, t + dur);
+  o.connect(gn); gn.connect(actx.destination); o.start(t); o.stop(t + dur + 0.02);
+}
+function hit(x, y) {
+  for (let i = S.notes.length - 1; i >= 0; i--) {
+    const n = S.notes[i], x0 = tx(n.on), x1 = Math.max(x0 + 3, tx(n.off)), y0 = ty(n.p);
+    if (y >= y0 && y <= y0 + RH && x >= x0 - 2 && x <= x1 + 4) return {i, edge: x >= x1 - 6 && x1 - x0 > 14};
+  }
+  return null;
+}
+const pt = e => { const r = cv.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+cv.addEventListener('pointerdown', e => {
+  if (!S.buf) return; cv.setPointerCapture(e.pointerId);
+  const [x, y] = pt(e);
+  if (y < RULER) { S.cursor = Math.max(0, Math.min(S.dur, xt(x))); if (S.play) play(true); draw(); return; }
+  if (x < GUT) return;
+  const h = hit(x, y);
+  push();
+  if (h) { S.sel = h.i; const n = S.notes[h.i]; S.drag = {mode: h.edge ? 'resize' : 'move', x, y, on: n.on, off: n.off, p: n.p}; beep(n.p, 0.15); }
+  else {
+    const t = Math.max(0, xt(x)), p = pitchAt(y);
+    S.notes.push({on: t, off: t + 0.25, p}); S.sel = S.notes.length - 1;
+    S.drag = {mode: 'new', x, y, on: t, p, moved: false}; beep(p, 0.15);
+  }
+  draw();
+});
+cv.addEventListener('pointermove', e => {
+  const [x, y] = pt(e);
+  if (!S.drag) { const h = S.buf && y > RULER && x > GUT ? hit(x, y) : null; cv.style.cursor = h ? (h.edge ? 'ew-resize' : 'grab') : 'crosshair'; return; }
+  const d = S.drag, n = S.notes[S.sel], dt = (x - d.x) / S.pps;
+  if (d.mode === 'new') { if (Math.abs(x - d.x) > 3) d.moved = true; if (d.moved) n.off = Math.max(d.on + 0.03, xt(x)); }
+  else if (d.mode === 'resize') n.off = Math.max(n.on + 0.03, d.off + dt);
+  else { const len = d.off - d.on; n.on = Math.max(0, d.on + dt); n.off = n.on + len; n.p = pitchAt(y - (d.y - ty(d.p) - RH / 2) ); }
+  draw();
+});
+cv.addEventListener('pointerup', () => { if (S.drag) { S.drag = null; changed(); } });
+cv.addEventListener('wheel', e => {
+  if (!S.buf) return; e.preventDefault();
+  if (e.ctrlKey) zoom(e.deltaY < 0 ? 1.25 : 0.8, pt(e)[0]);
+  else { S.t0 = Math.max(0, Math.min(S.dur, S.t0 + (e.deltaY + e.deltaX) / S.pps)); draw(); }
+}, {passive: false});
+function zoom(f, ax) {
+  const a = ax === undefined ? GUT + (cv._w - GUT) / 2 : ax, ta = xt(a);
+  S.pps = Math.max(20, Math.min(600, S.pps * f)); S.t0 = Math.max(0, ta - (a - GUT) / S.pps); draw();
+}
+$('bPlus').onclick = () => zoom(1.25); $('bMinus').onclick = () => zoom(0.8);
+$('pos').oninput = e => { S.t0 = e.target.value / 100; draw(); };
+addEventListener('resize', () => { fit(); draw(); });
+addEventListener('keydown', e => {
+  if (!S.buf || /INPUT|SELECT/.test(e.target.tagName) && e.target.type !== 'checkbox' && e.target.type !== 'range') return;
+  const n = S.notes[S.sel];
+  if (e.code === 'Space') { e.preventDefault(); toggle(); }
+  else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); if (S.undo.length) { S.notes = JSON.parse(S.undo.pop()); S.sel = -1; changed(); } }
+  else if (n && (e.key === 'Delete' || e.key === 'Backspace')) { e.preventDefault(); push(); S.notes.splice(S.sel, 1); S.sel = -1; changed(); }
+  else if (n && ['ArrowUp', 'ArrowDown'].includes(e.key)) { e.preventDefault(); push(); n.p = Math.max(LO, Math.min(LO + NS - 1, n.p + (e.key === 'ArrowUp' ? 1 : -1))); beep(n.p, 0.15); changed(); }
+  else if (n && ['ArrowLeft', 'ArrowRight'].includes(e.key)) { e.preventDefault(); push(); const d = (e.shiftKey ? 0.05 : 0.01) * (e.key === 'ArrowRight' ? 1 : -1); n.on = Math.max(0, n.on + d); n.off = Math.max(n.on + 0.03, n.off + d); changed(); }
+});
+
+// ---------------------------------------------------------------- odtwarzanie
+let raf = 0, beeps = [];
+// suwak miksu: 0 = tylko nagranie, 100 = tylko dźwięk nut; równa moc, więc przy 50 % obie części brzmią tak samo głośno
+function gains() {
+  if (!actx) return null;
+  if (!S.gRec) { S.gRec = actx.createGain(); S.gNote = actx.createGain(); S.gRec.connect(actx.destination); S.gNote.connect(actx.destination); }
+  return S;
+}
+function applyMix() {
+  const v = $('mix').value / 100;
+  $('mixV').textContent = Math.round((1 - v) * 100) + ' / ' + Math.round(v * 100) + ' %';
+  if (!gains()) return;
+  const t = actx.currentTime;
+  S.gRec.gain.setTargetAtTime(Math.cos(v * Math.PI / 2), t, 0.01);
+  S.gNote.gain.setTargetAtTime(Math.sin(v * Math.PI / 2) * 2.5, t, 0.01);  // 2,5: pojedyncze sygnały są cichsze niż nagranie
+}
+$('mix').oninput = applyMix; applyMix();
+function stopPlay() {
+  if (S.play) { try { S.play.src.stop(); } catch (e) {} S.play = null; }
+  beeps.forEach(o => { try { o.stop(); } catch (e) {} }); beeps = []; cancelAnimationFrame(raf); $('bPlay').textContent = '▶ Odtwórz (spacja)';
+}
+function play(restart) {
+  if (!S.buf) return; if (restart) stopPlay();
+  actx.resume();
+  const rate = parseFloat($('rate').value), src = actx.createBufferSource();
+  gains(); applyMix(); src.buffer = S.buf; src.playbackRate.value = rate; src.connect(S.gRec);
+  const start = S.cursor >= S.dur - 0.05 ? 0 : S.cursor, t0 = actx.currentTime + 0.05;
+  src.start(t0, start); src.onended = () => { if (S.play && S.play.src === src) { stopPlay(); } };
+  S.play = {src, start, t0, rate};
+  {
+    for (const n of S.notes) {
+      if (n.on < start) continue;
+      const o = actx.createOscillator(), gn = actx.createGain(), ts = t0 + (n.on - start) / rate, dur = Math.min(0.5, n.off - n.on) / rate;
+      o.type = 'triangle'; o.frequency.value = 440 * Math.pow(2, (n.p - 69) / 12);
+      gn.gain.setValueAtTime(0, ts); gn.gain.linearRampToValueAtTime(0.12, ts + 0.01); gn.gain.exponentialRampToValueAtTime(0.001, ts + dur);
+      o.connect(gn); gn.connect(S.gNote); o.start(ts); o.stop(ts + dur + 0.02); beeps.push(o);
+    }
+  }
+  $('bPlay').textContent = '⏸ Stop (spacja)';
+  const tick = () => {
+    if (!S.play) return;
+    S.cursor = Math.min(S.dur, S.play.start + Math.max(0, actx.currentTime - S.play.t0) * S.play.rate);
+    if (tx(S.cursor) > cv._w - 20 || S.cursor < S.t0) S.t0 = Math.max(0, S.cursor - 1);
+    draw(); raf = requestAnimationFrame(tick);
+  };
+  tick();
+}
+function toggle() { if (S.play) { const c = S.cursor; stopPlay(); S.cursor = c; draw(); } else play(); }
+$('bPlay').onclick = toggle;
+
+// ---------------------------------------------------------------- zapis
+function download(name, data, type) {
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([data], {type})); a.download = name;
+  document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+}
+const sorted = () => S.notes.slice().sort((a, b) => a.on - b.on || a.p - b.p);
+function csv() {
+  const only = $('cOn').checked, ns = sorted();
+  return (only ? 'onset,pitch\n' : 'onset,offset,pitch\n') + ns.map(n => only ? n.on.toFixed(3) + ',' + n.p : n.on.toFixed(3) + ',' + n.off.toFixed(3) + ',' + n.p).join('\n') + '\n';
+}
+function midi() {
+  const vlq = n => { const o = [n & 127]; n >>= 7; while (n) { o.push((n & 127) | 128); n >>= 7; } return o.reverse(); };
+  const ev = [];
+  for (const n of S.notes) { const a = Math.round(n.on * 960), b = Math.max(a + 1, Math.round(n.off * 960)); ev.push([a, 1, 0x90, n.p, 80], [b, 0, 0x80, n.p, 0]); }
+  ev.sort((x, y) => x[0] - y[0] || x[1] - y[1]);
+  const t = [0, 0xff, 0x51, 3, 7, 0xa1, 0x20, 0, 0xc0, 24]; let last = 0;
+  for (const [tick, , st, p, v] of ev) { t.push(...vlq(tick - last), st, p, v); last = tick; }
+  t.push(0, 0xff, 0x2f, 0);
+  const u32 = n => [n >>> 24, (n >> 16) & 255, (n >> 8) & 255, n & 255];
+  return new Uint8Array([0x4d, 0x54, 0x68, 0x64, ...u32(6), 0, 0, 0, 1, 1, 0xe0, 0x4d, 0x54, 0x72, 0x6b, ...u32(t.length), ...t]);
+}
+$('bCsv').onclick = () => { download(S.name + '.csv', csv(), 'text/csv'); setStatus('Zapisano ' + S.name + '.csv (' + S.notes.length + ' nut). Trzymaj go obok ' + S.name + '.wav.'); };
+$('bMid').onclick = () => { download(S.name + '.mid', midi(), 'audio/midi'); setStatus('Zapisano ' + S.name + '.mid.'); };
+$('fWav').onchange = async e => { const f = e.target.files[0]; if (!f) return; stopPlay(); try { await loadWav(f); } catch (err) { setStatus('Nie udało się wczytać nagrania: ' + err.message); } };
+$('fCsv').onchange = async e => {
+  const f = e.target.files[0]; if (!f) return;
+  try { const ns = parseCsv(await f.text()); if (S.buf) push(); S.notes = ns; S.sel = -1; changed(); setStatus('Wczytano ' + ns.length + ' nut z ' + f.name + '. Popraw błędy i zapisz.'); }
+  catch (err) { setStatus('Błąd CSV: ' + err.message); }
+  e.target.value = '';
+};
+fit(); draw();
+window.__ann = S;
+</script>
+</body>
+</html>

@@ -1,0 +1,6 @@
+.git
+dist
+build
+node_modules
+tools/gen6/tests
+**/__pycache__

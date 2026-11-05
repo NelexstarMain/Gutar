@@ -1,0 +1,38 @@
+\usepackage{newunicodechar}
+\newunicodechar{≈}{\ensuremath{\approx}}
+\newunicodechar{♯}{\ensuremath{\sharp}}
+\usepackage{etoolbox}
+\usepackage{microtype}
+\usepackage{longtable,booktabs,array}
+\usepackage[table]{xcolor}
+\usepackage{fancyhdr}
+\usepackage{float}
+\usepackage[font=small,labelfont=bf,labelsep=period,justification=justified,singlelinecheck=false]{caption}
+\usepackage[most]{tcolorbox}
+\definecolor{gutblue}{RGB}{31,78,140}
+\AtBeginDocument{\hypersetup{colorlinks=true,linkcolor=gutblue,urlcolor=gutblue,citecolor=gutblue}}
+% ramki dydaktyczne (cytaty w Markdownie)
+\renewenvironment{quote}{\begin{tcolorbox}[breakable,enhanced jigsaw,colback=gutblue!5,colframe=gutblue!5,boxrule=0pt,arc=0pt,borderline west={2.2pt}{0pt}{gutblue},left=9pt,right=8pt,top=5pt,bottom=5pt,before skip=9pt,after skip=9pt]\small}{\end{tcolorbox}}
+% tabele
+\renewcommand{\arraystretch}{1.25}
+\AtBeginEnvironment{longtable}{\small\rowcolors{2}{white}{gray!7}}
+\setlength{\emergencystretch}{3em}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{.55em}
+% rysunki: mniej pustych miejsc
+\floatplacement{figure}{htbp}
+\renewcommand{\topfraction}{.9}
+\renewcommand{\bottomfraction}{.9}
+\renewcommand{\textfraction}{.1}
+\renewcommand{\floatpagefraction}{.7}
+% nagłówek i stopka
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\itshape Gutar Gen 6: matematyka transkrypcji gitary}
+\fancyhead[R]{\small\itshape\nouppercase{\leftmark}}
+\fancyfoot[C]{\small\thepage}
+\renewcommand{\headrulewidth}{.3pt}
+\fancypagestyle{plain}{\fancyhf{}\fancyfoot[C]{\small\thepage}\renewcommand{\headrulewidth}{0pt}}
+% spis treści na osobnej stronie
+\let\oldtableofcontents\tableofcontents
+\renewcommand{\tableofcontents}{\clearpage\oldtableofcontents\clearpage}

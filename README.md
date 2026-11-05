@@ -104,6 +104,61 @@ akordy z partytury), skryptem `tools/guitarset_eval.py` z metrykami **mir_eval**
 
 (Kolumna „bez modelu” zawiera już odszumianie; liczby bez modelu różnią się od poprzedniej wersji tego README o ±0,3 pkt.)
 
+### Generacja 6 (dane): muzyka klasyczna z MIDI na wielu instrumentach i w wielu miejscach
+
+Dane do uczenia większego modelu. Zamiast losowych nut (środowiska gen 4) prawdziwa muzyka: tysiące partytur klasycznych jako MIDI,
+każda w kilku wersjach, grana na wielu instrumentach i nagrywana w wielu miejscach. Wszystko powstaje jednym poleceniem
+`tools/gen6/make_gen6.sh` (korpus → nagrania → zrzuty HCQT), format jest ten sam co w gen 4/5, więc `train_gen5.py` czyta go bez zmian.
+
+* **Korpus** (`tools/gen6/fetch_classical.py`, spis utworów i podział: `data/gen6/manifest.csv`): **3236 utworów, 282 h muzyki,
+  8,2 mln nut**. MAESTRO v3 (1276 wykonań fortepianowych z konkursu Piano-e-Competition: Chopin, Schubert, Beethoven, Bach, Liszt,
+  Rachmaninow, Schumann, Debussy, Haydn, Mozart, Skriabin, Scarlatti, Brahms, …; licencja CC BY-NC-SA 4.0) oraz partytury z korpusu
+  music21 (1960: msze Palestriny, chorały i inne utwory Bacha, madrygały Monteverdiego, trecento, Josquin, kwartety Beethovena, Mozarta
+  i Haydna, Händel, Corelli, Schumannowie, …; każda partia osobną ścieżką MIDI). Podział train / validation / test po utworach
+  (MAESTRO: własny podział; music21: skrót ścieżki 90/5/5 %), więc wersje jednego utworu nie trafiają do dwóch zbiorów.
+* **Wersje utworu** (`tools/gen_classical.cpp`, domyślnie 4 na utwór): oryginał, **odwrócenie** („do góry nogami”: wysokości odbite
+  wokół środka skali utworu, zakres bez zmian), **rak** (od końca; początki w odwróconej kolejności, długość brzmienia z pedałem zostaje),
+  **rak odwrócenia**; każda wersja losuje modyfikatory: transpozycja −7…+7 (od 5. wersji zawsze), tempo ×0,6–1,6, artykulacja od staccato
+  do legato, humanizacja czasu (do 25 ms) i dynamiki, usunięcie jednego głosu, przeniesienie głosu o oktawę. Każda wersja zapisywana też
+  jako MIDI (`<zbiór>/midi/<utwór>_v<k>.mid`).
+* **Fragmenty i obsada**: z każdej wersji 2 losowe fragmenty po 10–20 s. Obsada: solo (połowa nagrań), zespół (każdy głos inny
+  instrument) albo gitara + zespół. **27 instrumentów**: gitara klasyczna (syntezator silnika), stalowa, elektryczna, ukulele,
+  mandolina, lutnia, harfa, klawesyn, fortepian, dzwonki, marimba, wibrafon, organy, skrzypce, altówka, wiolonczela, kontrabas, pizzicato,
+  flet, klarnet, obój, fagot, waltornia, trąbka, chór, syntezator, akordeon (`tools/gt_instruments.hpp`: rozkład alikwotów, nieharmoniczność,
+  kilka strun na nutę, sztabki o nieharmonicznych proporcjach, wibrato, tremolo, szum ataku i oddechu, pudło i formanty; barwa losowana
+  od nowa w każdym nagraniu). Rodzina gitar ma ok. 35 % obsady (`--guitar`). Nuty spoza zakresu instrumentu i modelu (MIDI 36–88)
+  przenoszone o oktawy; strój zespołu A = 440 ± 30 centów.
+* **Miejsca** (11): studio, pokój, salon, sala koncertowa (publiczność), kościół (pogłos 2,5–6 s), plener (wiatr, ptaki), telefon
+  (pasmo 300–3400 Hz, kompresja, przester), dyktafon/kaseta (szum, kołysanie wysokości), płyta winylowa (trzaski), transmisja
+  internetowa (kompresja), próba w domu (pełne otoczenie gen 4). Do tego kąt mikrofonu i, zależnie od miejsca, otoczenie gen 4 (szumy, tony,
+  brum, stuki, kliknięcia, rozmowa; wspólny kod w `tools/gt_envfx.hpp`), czasem przester albo kompresor; poziom nagrania −30…−1 dBFS.
+* **Prawda** (`<id>.truth.json`): nuty jak dotąd (`midi`, `t0`, `t1`, `ta` = koniec słyszalności, `f`) plus instrument (`i`) i głos (`v`),
+  opis wersji, obsady i miejsca; `index.csv` ma jeden wiersz na nagranie. `--clean` zapisuje też same instrumenty bez otoczenia (do maski).
+
+Pełny zbiór (4 wersje × 2 fragmenty): ok. 26 tys. nagrań, ok. 115 h dźwięku (20 razy więcej niż środowiska gen 4), ok. 1 s procesora
+na nagranie (2,5 min na 480 nagrań na 4 rdzeniach); .wav ok. 0,7 MB, zrzut HCQT ok. 2 MB na nagranie. `VERSIONS=8` daje każdą formę
+dwa razy (inne transpozycje i tempo). `train_gen5.py --lazy` czyta zrzuty z dysku (memmap) zamiast trzymać je w pamięci, a walidację
+dzieli po utworze (pole `piece`).
+
+Punkt odniesienia: obecny silnik (gen 5) na próbie zbioru walidacyjnego gen 6 (60 utworów, 480 nagrań, 2,2 h, 60 tys. nut; utwory
+spoza uczenia). Silnik uczony tylko na gitarze radzi sobie najgorzej tam, gdzie gen 6 dokłada najwięcej nowego: sztabki
+(nieharmoniczne alikwoty), smyczki i chór (wibrato, miękki atak), kościół (długi pogłos).
+
+| próba walidacyjna gen 6 (gen 5 bez douczenia) | nagrań | nuty F1 (klatki) | początki F1 (50 ms) |
+|---|---:|---:|---:|
+| wszystkie | 480 | 62,4 % | 51,9 % |
+| solo: gitara klasyczna / inne gitary | 73 / 29 | 63,6 / 65,2 % | 63,4 / 62,5 % |
+| solo: inne szarpane (mandolina, lutnia, harfa, klawesyn, pizzicato) | 41 | 60,5 % | 63,2 % |
+| solo: dęte / smyczki / chór | 44 / 37 / 13 | 69,8 / 63,4 / 61,4 % | 50,4 / 32,1 / 22,8 % |
+| solo: fortepian / sztabki (dzwonki, marimba, wibrafon) | 7 / 21 | 51,2 / 33,8 % | 44,7 / 17,4 % |
+| zespół / gitara + zespół | 131 / 57 | 62,7 / 61,8 % | 52,0 / 55,6 % |
+| oryginał / odwrócenie / rak / rak odwrócenia | po 120 | 64,3 / 60,0 / 64,6 / 60,8 % | 55,2 / 49,9 / 54,3 / 48,4 % |
+| miejsce: najlepsze (plener, pokój, telefon) | 139 | 65,0–66,0 % | 46,6–57,8 % |
+| miejsce: kościół | 52 | 54,7 % | 32,0 % |
+
+Dla porównania nowe środowiska gen 4 (sama gitara): nuty 79,8 %, początki 83,4 %. Dane gen 6 nie są jeszcze użyte do uczenia;
+to następny krok (`train_gen5.py --lazy --hidden 32 …`, większa sieć ma teraz ok. 20 razy więcej danych).
+
 ### Generacja 5: sieć na widmie z uwagą
 
 Zamiast poprawiać decyzje klasycznego detektora (generacje 3–4: 32–44 ręcznie liczone cechy), generacja 5 uczy się wprost z widma, jak
@@ -137,6 +192,14 @@ współczesne modele transkrypcji (Onsets and Frames, Hawthorne i in. 2018; Basi
 
 Gen 5 działa przy analizie nagrania (plik, demo, ponowna analiza po zatrzymaniu mikrofonu); na żywo zostaje klasyczny detektor.
 Wykresy uczenia i porównanie generacji: artefakt „Gitara Słuchacz: pomiary”.
+
+### Generacja 6: architektura (bez wag)
+
+Nowa architektura pod nowe dane, w `tools/gen6/` (opis: [`docs/GEN6.md`](docs/GEN6.md)). Ten etap obejmuje tylko kod: modelu jeszcze nie uczono, a silnik nadal używa gen 5.
+* dane w dowolnym formacie są sprowadzane do jednego zapisu; adaptery: manifest JSONL, GuitarSet/JAMS, CSV/TSV, MIDI, korpusy, zrzuty silnika; maski etykiet, których źródło nie ma;
+* cechy co 23 ms (gen 5: 46 ms), dokładna zmiana próbkowania (gen 5 przy 48 kHz liczyła cechy przy 12 kHz);
+* sieć: bloki harmonicznych konwolucji, uwaga w czasie w obie strony i uwaga między wysokościami, 5 głowic (początek, brzmi, koniec, głośność, tabulatura);
+* jeden moduł ewaluacji dla wszystkich generacji (także dla JSON silnika C++): nuty, klatki, mapy, podtrzymanie, akordy, tabulatura, stroik, bootstrap; zgodny z mir_eval (testy).
 
 ### Generacja 4: losowe środowiska, model maski i model nut
 
@@ -298,6 +361,10 @@ for f in env_train/env_*[0-9].wav; do GT_DUMPH=hcqt/env/$(basename $f .wav).bin 
 python3 tools/train_gen5.py --src środowiska hcqt/env env_train 0.25 --src korpus hcqt/syn prawda 0.25 --src GuitarSet hcqt/gs annotation 0.5 --attn --resume
 python3 tools/train_mask.py --train env_train zrzuty_maski --test env_test zrzuty_maski_test
 python3 tools/train_model.py --env zrzuty_env env_train --syn ... --gs ... --ensemble 3 --weights "korpus=0.25,środowiska=0.25,GuitarSet=0.5"
+# gen 6: korpus klasyczny MIDI, nagrania (train/validation/test) i zrzuty HCQT; próba: LIMIT=20 tools/gen6/make_gen6.sh gen6_proba
+tools/gen6/make_gen6.sh gen6
+./build/gen_classical x x x --list                 # instrumenty i miejsca; --inst gitara_klasyczna,harfa --place kosciol zawęża
+python3 tools/train_gen5.py --lazy --attn --src klasyka gen6/hcqt/train gen6/train 0.3 --src środowiska hcqt/env env_train 0.2 ...
 ```
 
 ## Układ kodu
@@ -316,6 +383,10 @@ python3 tools/train_model.py --env zrzuty_env env_train --syn ... --gs ... --ens
 | `src/gt_model.hpp` | wagi modelu nut gen 4 (generowane przez `tools/train_model.py`) |
 | `src/gt_mask.hpp`, `src/gt_maskmodel.hpp` | model maski: ile w każdym paśmie jest gitary (wagi z `tools/train_mask.py`) |
 | `tools/gen_env.cpp` | generator losowych środowisk (gitara + pokój + mikrofon + otoczenie, osobno sama gitara) |
+| `tools/gt_envfx.hpp` | otoczenie wspólne dla generatorów: kąt mikrofonu, szumy, tony, brum, stuki, kliknięcia, rozmowa |
+| `tools/gen_classical.cpp`, `tools/gt_instruments.hpp` | gen 6: MIDI → wersje utworu → 27 instrumentów → 11 miejsc nagrania |
+| `tools/gen6/` | gen 6: pobranie i konwersja korpusu (`fetch_classical.py`), całość jednym poleceniem (`make_gen6.sh`) |
+| `data/gen6/manifest.csv` | spis 3236 utworów korpusu gen 6 z podziałem train / validation / test |
 | `src/gt_export.hpp` | MIDI, WAV, ZIP, tabulatura, JSON |
 | `src/gt_synth.hpp` | syntezator szarpanej struny (odsłuch i korpus testowy) |
 | `src/wasm_api.cpp` | interfejs C dla przeglądarki |

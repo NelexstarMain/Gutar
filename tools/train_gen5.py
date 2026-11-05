@@ -12,6 +12,7 @@ wysokości, 2 głowy, wyuczona premia za odległość, potem feed-forward; uwaga
 Użycie:
   train_gen5.py --src środowiska <zrzuty> <prawda> 0.25 --src korpus <zrzuty> <prawda> 0.25 --src GuitarSet <zrzuty> <jams> 0.5
                 [--val-gs 02_Funk] [--hidden 24] [--epochs 14] [--out src/gt_gen5model.hpp]
+  gen 6 (muzyka klasyczna, tools/gen6/make_gen6.sh): --src klasyka <zrzuty> <nagrania> 0.3 --lazy  (walidacja dzielona po utworze)
 """
 import os, sys, glob, json, argparse, zlib, time
 import numpy as np
@@ -46,10 +47,24 @@ def labels(T, notes):
     return fr, on
 
 
-def load_dump(p):
+def load_dump(p, lazy=False):
+    if lazy:  # bez wczytywania do pamięci: wycinki czytane z dysku przy losowaniu (dane gen 6: dziesiątki GB zrzutów)
+        T, Cc, Pp = np.fromfile(p, np.int32, count=3)
+        return np.memmap(p, np.float32, 'r', offset=12, shape=(int(T), int(Cc), int(Pp)))
     b = np.fromfile(p, np.uint8)
     T, Cc, Pp = np.frombuffer(b[:12].tobytes(), np.int32)
     return np.frombuffer(b[12:].tobytes(), np.float32).reshape(T, Cc, Pp)
+
+
+def truth_piece(path):
+    """utwór, z którego pochodzi nagranie (dane gen 6: kilka wersji i fragmentów jednego utworu), albo None"""
+    if path.endswith('.jams'):
+        return None
+    return json.load(open(path)).get('piece')
+
+
+def tt(x):
+    return x if torch.is_tensor(x) else torch.from_numpy(np.array(x, np.float32))  # kopia wycinka z memmap (tylko do odczytu)
 
 
 def truth_path(tdir, name):
@@ -147,6 +162,7 @@ def main():
     ap.add_argument('--seed', type=int, default=1)
     ap.add_argument('--resume', action='store_true', help='wznów z <out>.ckpt (zapisywany po każdej epoce)')
     ap.add_argument('--attn', action='store_true', help='blok uwagi w czasie (ostatnia sekunda, 2 głowy)')
+    ap.add_argument('--lazy', action='store_true', help='zrzuty czytane z dysku (memmap), etykiety w float16: duże zbiory gen 6')
     a = ap.parse_args()
     torch.manual_seed(a.seed); rng = np.random.default_rng(a.seed)
     srcs = []
@@ -157,9 +173,13 @@ def main():
             tp = truth_path(tdir, n)
             if not tp:
                 continue
-            X = load_dump(p); fr, on = labels(len(X), truth_notes(tp))
-            item = (torch.from_numpy(X.copy()), torch.from_numpy(fr), torch.from_numpy(on))
-            isval = n.startswith(a.val_gs) if tp.endswith('.jams') else zlib.crc32(n.encode()) % 5 == 0
+            X = load_dump(p, a.lazy); fr, on = labels(len(X), truth_notes(tp))
+            if a.lazy:
+                item = (X, torch.from_numpy(fr.astype(np.float16)), torch.from_numpy(on.astype(np.float16)))
+            else:
+                item = (torch.from_numpy(X.copy()), torch.from_numpy(fr), torch.from_numpy(on))
+            piece = truth_piece(tp)  # gen 6: wszystkie wersje i fragmenty utworu po tej samej stronie podziału
+            isval = n.startswith(a.val_gs) if tp.endswith('.jams') else zlib.crc32((piece or n).encode()) % 5 == 0
             (va if isval else tr).append(item)
         srcs.append((name, tr, va, float(w)))
         print('%-12s uczące %d, walidacja %d' % (name, len(tr), len(va)))
@@ -178,10 +198,11 @@ def main():
             T = len(X)
             if T <= Lc:
                 pad = Lc - T
+                X, fr, on = tt(X), fr.float(), on.float()
                 X = F.pad(X, (0, 0, 0, 0, 0, pad)); fr = F.pad(fr, (0, 0, 0, pad)); on = F.pad(on, (0, 0, 0, pad)); t0 = 0
             else:
                 t0 = rng.integers(T - Lc)
-            xs.append(X[t0:t0 + Lc].permute(1, 0, 2)); fs.append(fr[t0:t0 + Lc]); os_.append(on[t0:t0 + Lc])
+            xs.append(tt(X[t0:t0 + Lc]).permute(1, 0, 2)); fs.append(fr[t0:t0 + Lc].float()); os_.append(on[t0:t0 + Lc].float())
         return torch.stack(xs), torch.stack(fs), torch.stack(os_)
 
     def evaluate():
@@ -191,7 +212,8 @@ def main():
                 tp = fp = fn = 0
                 otp = ofp = ofn = 0
                 for X, fr, on in va:
-                    y = torch.sigmoid(net(X.permute(1, 0, 2)[None]))[0]
+                    y = torch.sigmoid(net(tt(X).permute(1, 0, 2)[None]))[0]
+                    fr, on = fr.float(), on.float()
                     pf = y[0] >= 0.5; tf = fr >= 0.5
                     tp += int((pf & tf).sum()); fp += int((pf & ~tf).sum()); fn += int((~pf & tf).sum())
                     po = y[1] >= 0.5; to = on >= 0.99
