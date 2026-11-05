@@ -37,9 +37,31 @@ Oznaczenia, które wracają w całym tekście:
 
 ---
 
+# Plan nauki (jak się uczyć z tego dokumentu)
+
+Idź po kolei, a przy każdym rozdziale Części I rób trzy rzeczy: (1) przeczytaj ramkę „Po co nam to?”, (2) przeczytaj wyjaśnienie i **sam przelicz przykład na kartce**, (3) rozwiąż „Sprawdź siebie”. Gdy odpowiedzi się zgadzają, idziesz dalej.
+
+| krok | rozdział | co umiesz po nim | czas (orientacyjnie) |
+|---|---|---|---|
+| 0 | M0 | czytać wszystkie znaki | 20 min |
+| 1 | M1–M3 | dźwięk jako liczby, wysokość i alikwoty | 40 min |
+| 2 | M4–M5 | skąd bierze się wejście sieci (HCQT) | 60 min |
+| 3 | M6–M9 | konwolucja, funkcje, normalizacja, uwaga: „wnętrze” sieci | 90 min |
+| 4 | M10–M11 | jak sieć się uczy | 45 min |
+| 5 | M12–M14 | dekoder, miary jakości i całość | 45 min |
+| 6 | Część II | czytasz właściwą pracę i rozumiesz każdy wzór (przy każdym rozdziale jest „Po ludzku” i „Powtórka”) | 90 min |
+
+**Jedno zdanie o całym modelu:** *dźwięk zamieniamy na obraz „kto gra w jakiej wysokości i kiedy” (HCQT), sieć uczy się czytać ten obraz (blok harmoniczny + uwaga), a prosty dekoder zamienia jej odpowiedzi na listę nut i tabulaturę.*
+
+---
+
+
 # CZĘŚĆ I. MATEMATYKA KROK PO KROKU
 
 ## M0. Zapis matematyczny: słownik symboli i funkcji
+
+> **Po co nam to?** Wzory są zapisane „alfabetem” matematyki. Dopóki nie znasz liter, nie przeczytasz zdania. Ten rozdział to alfabet: nie musisz go uczyć się na pamięć, wystarczy wracać do niego, gdy trafisz na nieznany znak.
+
 
 **Po co ten rozdział.** Zanim wejdziemy w dźwięk, wyjaśniamy **każdy znak**, który potem się pojawia. Jeśli w dalszej części trafisz na symbol, którego nie znasz, wróć tutaj (albo do Dodatku B). Każdy symbol ma: zapis, odczyt po polsku, co robi i mały przykład.
 
@@ -181,9 +203,23 @@ Pisane prostą czcionką, bo to nazwy, nie zmienne. Każda ma dalej pełne wyja�
 
 **Ważne o macierzach $W$.** $W$ (z indeksami: $W_h, W_Q, W_K, W_V, W_O, W_1, W_2$) zawsze oznacza **wyuczoną macierz wag**: tabelę liczb, przez którą mnożymy wektor, np. $y=Wx$ znaczy $y_i=\sum_j W_{ij}x_j$. To właśnie te liczby (razem z obciążeniami $b$, $c$) są uczone: razem 249 219 sztuk.
 
+> **Sprawdź siebie.** Spróbuj sam, potem zajrzyj do odpowiedzi.
+>
+> 1. Ile wynosi $\arg\max$ dla $x=(2,9,4)$? **Odp.:** 2, bo największa wartość (9) stoi na drugim miejscu. $\max$ dałby 9.
+> 2. Co znaczy $\theta\leftarrow\theta-\eta g$? **Odp.:** nową wartość $\theta$ ustaw na starą pomniejszoną o $\eta$ razy $g$.
+> 3. Co mówi kształt $[B,T,53,64]$? **Odp.:** $B$ nagrań, każde ma $T$ klatek, w każdej 53 półtony, a każdy półton opisuje 64 liczby.
+>
+> **Najczęstszy błąd:** mylenie wartości z jej numerem ($\max$ kontra $\arg\max$) oraz czytanie $h^{(2)}$ jako „$h$ do kwadratu” (nawias w indeksie górnym to etykieta).
+>
+> **Co zapamiętać:** Znaki są tylko skrótami. Każdy z nich da się wypowiedzieć zwykłym zdaniem.
+
+
 ---
 
 ## M1. Dźwięk jako ciąg liczb, próbkowanie
+
+> **Po co nam to?** Komputer nie „słyszy”: widzi ciąg liczb. Zanim cokolwiek policzymy, musimy wiedzieć, co te liczby znaczą i ile ich jest na sekundę.
+
 
 **Intuicja.** Mikrofon mierzy ciśnienie powietrza. Komputer nie zapisuje ciągłej krzywej, tylko **próbki**: ciśnienie mierzone co stały ułamek sekundy.
 
@@ -199,8 +235,22 @@ gdzie $f_s$ to liczba próbek na sekundę. Najwyższa częstotliwość, jaką da
 
 ![Lewo: ton 2000 Hz próbkowany przy 11 025 Hz (pomarańczowe punkty) jest odtworzony wiernie. Prawo: ton 7000 Hz leży powyżej częstotliwości Nyquista; te same punkty pasują też do czerwonej fali 4025 Hz, więc po próbkowaniu nie da się ich odróżnić („zawijanie”, *aliasing*). Dlatego przed zmianą próbkowania odfiltrowuje się wysokie tony.](rysunki/r16_probkowanie.png){width=100%}
 
+> **Sprawdź siebie.** Spróbuj sam, potem zajrzyj do odpowiedzi.
+>
+> 1. Ile próbek ma 2 s nagrania przy 11 025 Hz? **Odp.:** $2\cdot11025=22\,050$.
+> 2. Jaki najwyższy ton da się jeszcze poprawnie zapisać? **Odp.:** $f_s/2=5512{,}5$ Hz (Nyquist).
+> 3. Co się stanie z tonem 7000 Hz? **Odp.:** zostanie zapisany jako „duch” 4025 Hz ($11025-7000$), bo leży powyżej Nyquista (rys. 16).
+>
+> **Najczęstszy błąd:** uważanie, że „więcej próbek na sekundę” oznacza „wyższy dźwięk”. Częstotliwość próbkowania to szybkość *pomiaru*, a częstotliwość tonu to szybkość *drgań*.
+>
+> **Co zapamiętać:** Dźwięk to ciąg próbek; ton wyższy niż połowa częstotliwości próbkowania jest nie do odtworzenia.
+
+
 
 ## M2. Wysokość dźwięku: Hz, półtony, centy, MIDI
+
+> **Po co nam to?** Model „myśli” w półtonach i binach, a nie w hercach. Ten rozdział uczy przeliczać jedno na drugie.
+
 
 **Intuicja.** Ucho słyszy wysokość **logarytmicznie**: podwojenie częstotliwości to zawsze „oktawa wyżej”, niezależnie od tego, czy z 100 Hz na 200 Hz, czy z 1000 na 2000. Dlatego muzycy dzielą oktawę na 12 równych (w sensie ilorazu) półtonów.
 
@@ -229,8 +279,22 @@ $$m(p) = 36 + \frac{p-1}{3}, \qquad p=0,\dots,158.$$
 
 ![Częstotliwość nuty rośnie wykładniczo z numerem MIDI (lewy panel), ale na osi logarytmicznej (prawy panel) półtony są równo oddalone. Pomarańczowe punkty to puste struny gitary. Dlatego model liczy wszystko „po półtonach”, a nie po hercach.](rysunki/r01_skala.png){width=95%}
 
+> **Sprawdź siebie.** Spróbuj sam, potem zajrzyj do odpowiedzi.
+>
+> 1. Jaka jest częstotliwość nuty MIDI 57? **Odp.:** $440\cdot2^{(57-69)/12}=440\cdot2^{-1}=220$ Hz (A3, oktawa niżej niż 440 Hz).
+> 2. Ile centów dzieli 220 Hz i 440 Hz? **Odp.:** $1200\log_2 2=1200$ (jedna oktawa).
+> 3. Który bin odpowiada nucie MIDI 45 (A2, struna 5 pusta)? **Odp.:** $p=3\cdot(45-36)+1=28$.
+>
+> **Najczęstszy błąd:** myślenie, że półton to stała liczba herców. Półton to stały *iloraz* ($\approx1{,}0595$), więc przy niskich dźwiękach odstęp w Hz jest mały, a przy wysokich duży.
+>
+> **Co zapamiętać:** Wysokość jest logarytmiczna: równa różnica w półtonach to równy iloraz częstotliwości.
+
+
 
 ## M3. Alikwoty (harmoniczne)
+
+> **Po co nam to?** Właśnie alikwoty są powodem, dla którego rozpoznawanie nut jest trudne (błąd oktawowy) i jednocześnie powodem, dla którego jest wykonalne (nuta ma charakterystyczny „odcisk palca”). Blok harmoniczny sieci opiera się na tym rozdziale.
+
 
 **Intuicja.** Szarpnięta struna nie drga tylko jednym tonem. Drga całą rodziną: z częstotliwością podstawową $f_0$ (to ją słyszymy jako wysokość nuty) i z jej **wielokrotnościami** — alikwotami, które nadają barwę. Dlatego nie wystarczy szukać piku widma w $f_0$: pik w $2f_0$ może być zarówno drugim alikwotem niższej nuty, jak i podstawą wyższej (**błąd oktawowy**, największy problem transkrypcji).
 
@@ -257,8 +321,22 @@ Oktawa wyżej ($h=2$) to dokładnie 12 półtonów $=36$ binów; kwinta nad okta
 
 **Przykład krok po kroku (nuta E2, struna 6 pusta).** Półton $s=40-36=4$, więc bin $p=3\cdot4+1=13$. Blok harmoniczny czyta z tego binu siedem miejsc: $p+k$ dla $k=-36,0,36,57,72,84,93$, czyli biny $-23$ (poza zakresem, wstawia zera), $13,\ 49,\ 70,\ 85,\ 97,\ 106$. Zamieniamy je z powrotem na nuty ze wzoru $m(p)=36+(p-1)/3$: bin 13 → 40 (E2), 49 → 52 (E3), 70 → 59 (B3), 85 → 64 (E4), 97 → 68 (G♯4), 106 → 71 (B4). To dokładnie 1., 2., 3., 4., 5. i 6. alikwot E2. Jeśli w tych siedmiu miejscach wszędzie jest energia, kandydat „E2” jest bardzo prawdopodobny. Jeśli natomiast w binie 13 (podstawa) nic nie ma, a w 49, 85 i 106 jest energia, to raczej gra E3 (jego alikwoty to właśnie 49, 85, 106…), a „E2” byłoby błędem oktawowym. Blok harmoniczny widzi oba te miejsca naraz, więc może to rozróżnić.
 
+> **Sprawdź siebie.** Spróbuj sam, potem zajrzyj do odpowiedzi.
+>
+> 1. Jakie są częstotliwości pierwszych trzech alikwotów A2 (110 Hz)? **Odp.:** 110, 220, 330 Hz. Trzeci (330 Hz) to prawie dokładnie E4 (329,63 Hz), czyli $12+7=19$ półtonów wyżej.
+> 2. Ile binów to 2. oktawa (4. alikwot)? **Odp.:** $36\log_2 4=72$ biny $=24$ półtony.
+> 3. Dlaczego wzór alikwotów jest taki sam dla każdej nuty na osi logarytmicznej? **Odp.:** bo mnożenie częstotliwości (każdy alikwot $=h\cdot f_0$) to na osi logarytmicznej *dodawanie* stałej ($\log h$).
+>
+> **Najczęstszy błąd:** mylenie „$h$-tego alikwotu” z „$h$-tą nutą skali”. Alikwot $h$ leży $12\log_2 h$ półtonów nad podstawą, więc 3. alikwot to nie trzecia nuta, tylko kwinta nad oktawą.
+>
+> **Co zapamiętać:** Nuta = podstawa + jej wielokrotności. Na osi logarytmicznej układ tych wielokrotności jest zawsze taki sam, więc można go wykryć jednym wspólnym filtrem.
+
+
 
 ## M4. Transformata Fouriera: z drgań do widma
+
+> **Po co nam to?** Z surowych próbek nie widać, które tony grają. Transformata Fouriera „rozbija” dźwięk na tony, a wybór długości okna decyduje, czy rozróżnimy dwa sąsiednie półtony.
+
 
 **Intuicja.** Transformata Fouriera sprawdza, **ile** czystego tonu o każdej częstotliwości siedzi w krótkim fragmencie dźwięku — jak rozdzielenie akordu na pojedyncze struny.
 
@@ -305,7 +383,21 @@ Obie ramki (długa i krótka) w klatce $t$ mają **ten sam środek**.
 
 **Przykład: czas klatki.** Klatka $t=35$ ma środek w $\tau_{35}=(256\cdot35+2048)/11025=(8960+2048)/11025=0{,}9984$ s, czyli niemal dokładnie w 1,0 s nagrania.
 
+> **Sprawdź siebie.** Spróbuj sam, potem zajrzyj do odpowiedzi.
+>
+> 1. Rozdzielczość FFT dla $N=2048$, $f_s=11025$? **Odp.:** $11025/2048=5{,}38$ Hz.
+> 2. Czy takie okno rozdzieli E2 (82,41 Hz) i F2 (87,31 Hz)? **Odp.:** nie: odstęp to 4,9 Hz, a rozdzielczość 5,38 Hz jest gorsza (rys. 3).
+> 3. Co daje dopełnianie zerami? **Odp.:** gładszy wykres widma, ale *nie* lepszą rozdzielczość (nowej informacji nie ma).
+>
+> **Najczęstszy błąd:** wiara, że dopełnienie zerami poprawia rozdzielczość. Poprawia tylko interpolację, rozdzielczość zależy wyłącznie od długości *prawdziwego* sygnału w oknie.
+>
+> **Co zapamiętać:** Długie okno widzi częstotliwości dokładnie, ale czas niedokładnie; krótkie odwrotnie. Dlatego HCQT używa obu.
+
+
 ## M5. HCQT: widmo „ułożone” harmonicznie
+
+> **Po co nam to?** To jest dosłownie to, co dostaje sieć. Wszystko, co dalej, działa na tym tensorze, więc warto wiedzieć, skąd się bierze każda liczba.
+
 
 **Intuicja.** Zwykłe widmo ma biny liniowe (co $f_s/M$ Hz), a my chcemy biny logarytmiczne (co 1/3 półtonu) i dodatkowo — dla każdej kandydującej wysokości — informację, ile energii jest w jej 1×, 2×, 3×… wielokrotności. To właśnie **HCQT** (*Harmonic Constant-Q Transform*, Bittner i in. 2017, tu w odmianie liczonej z FFT).
 
@@ -345,8 +437,22 @@ Wynik: tensor $X\in\mathbb R^{T\times 9\times 159}$ (kod: `features.py:hcqt`).
 
 ![Prawdziwe wyjście `features.py:hcqt` dla syntetycznego sygnału: nuta E2 (od 0,2 s) i trzy nuty akordu (E3, G3, B3, od 1,0 s). Jasność to wartość $X$. Kanał $h$ w binie $p$ pokazuje energię przy częstotliwości $h\cdot f(p)$. Dlatego nuta E2 zapala się w binie E2 w każdym kanale z $h\ge1$ (jej alikwoty leżą w $h f_0$), a dodatkowo: nuta E3 zapala się w kanale $h=2$ w binie E2 (bo $2f(\text{E2})=f(\text{E3})$), a w kanale $h=0{,}5$ nuta E2 zapala się w binie E3 (bo $0{,}5\,f(\text{E3})=f(\text{E2})$). Tak powstają „fałszywi kandydaci”, które sieć musi odrzucić. Kanał krótki (po prawej) wyraźnie pokazuje moment szarpnięcia (pionowa kreska w 1,0 s).](rysunki/r04_hcqt.png){width=100%}
 
+> **Sprawdź siebie.** Spróbuj sam, potem zajrzyj do odpowiedzi.
+>
+> 1. Dla $A=0{,}1$ i $L_\text{ref}=-6$ dB ile wynosi $X$? **Odp.:** $L=-20$ dB, $X=(-20+6)/60+1=0{,}767$.
+> 2. Co oznacza $X=0$? **Odp.:** poziom co najmniej 60 dB poniżej odniesienia, czyli praktycznie cisza.
+> 3. Dlaczego normalizujemy względem percentyla nagrania? **Odp.:** by sieć nie zależała od tego, jak głośno nagrano (jedno nagranie ma ten sam wynik po wzmocnieniu o 10 dB).
+>
+> **Najczęstszy błąd:** branie maksimum widma w pojedynczym binie FFT. Model bierze maksimum z *przedziału* $\pm1/6$ półtonu, żeby rozstrojenie nie wyrzuciło piku poza komórkę.
+>
+> **Co zapamiętać:** HCQT to widmo w skali logarytmicznej, z kanałem na każdy alikwot, w decybelach i znormalizowane do głośności nagrania.
+
+
 
 ## M6. Konwolucja i jej odmiany
+
+> **Po co nam to?** Konwolucje to „oczy” sieci: małe filtry przesuwane po widmie, które uczą się rozpoznawać wzory (piki, szeregi alikwotów, początki nut).
+
 
 **Intuicja.** Konwolucja to „przesuwane okienko”: mały zestaw wag (filtr, *kernel*) przesuwa się po danych i w każdym miejscu liczy ważoną sumę sąsiadów. Ten sam filtr działa wszędzie, więc jeśli nauczył się rozpoznawać „pik”, rozpozna go w każdej wysokości i w każdej chwili. Mało parametrów, wbudowana niezmienniczość względem przesunięcia.
 
@@ -376,7 +482,21 @@ $$y_{o}[t,p] = b_o + \sum_{c=1}^{C_\text{in}}\ \sum_{i}\ \sum_{j} W_{o,c}[i,j]\;
 
 **Pole recepcyjne** (ile wejściowych klatek wpływa na jedną klatkę wyjścia). Filtr czasowy $3$ z dylatacją $d$ dodaje $d$ klatek z każdej strony. Trzy bloki $d=1,2,4$ dają $1+2+4 = 7$ klatek na stronę, zob. M9 i rozdz. 5.6.
 
+> **Sprawdź siebie.** Spróbuj sam, potem zajrzyj do odpowiedzi.
+>
+> 1. Ile parametrów ma konwolucja $1\times1$ z 336 do 48 kanałów? **Odp.:** $336\cdot48+48=16\,176$.
+> 2. Na jakie klatki patrzy filtr $3\times1$ z dylatacją 4 w klatce $t$? **Odp.:** $t-4,\ t,\ t+4$.
+> 3. Ile klatek z każdej strony widzą trzy bloki z dylatacjami 1, 2, 4? **Odp.:** $1+2+4=7$.
+>
+> **Najczęstszy błąd:** mylenie wymiaru „kanały” z wymiarem „czas”. Kanał to *rodzaj cechy* w danym punkcie (np. alikwot), a nie kolejna chwila.
+>
+> **Co zapamiętać:** Konwolucja = ten sam mały filtr wszędzie. Dylatacja zwiększa zasięg bez dokładania wag, a konwolucja $1\times1$ tylko miesza kanały.
+
+
 ## M7. Funkcje nieliniowe: sigmoid, softmax, GELU
+
+> **Po co nam to?** Sieć wypluwa dowolne liczby, a my chcemy prawdopodobieństw (od 0 do 1). Sigmoid i softmax robią to przekształcenie, a GELU daje sieci zdolność uczenia się krzywych, nie tylko prostych.
+
 
 Bez nieliniowości głęboka sieć byłaby jedną wielką mnożarką macierzy. Dlatego po warstwach liniowych stosuje się nieliniowe „zgięcia”.
 
@@ -403,8 +523,22 @@ gdzie $\Phi(z)$ to dystrybuanta rozkładu normalnego (pole pod krzywą dzwonową
 
 ![Sigmoid (lewo), GELU z porównaniem do ReLU (środek) oraz kara BCE (prawo): dla $y=1$ kara $-\alpha\ln p$ rośnie bardzo szybko, gdy $p\to0$; czerwona krzywa ($\alpha=4$) leży 4 razy wyżej niż niebieska, więc przeoczenie początku nuty boli mocniej niż fałszywy alarm.](rysunki/r08_funkcje.png){width=100%}
 
+> **Sprawdź siebie.** Spróbuj sam, potem zajrzyj do odpowiedzi.
+>
+> 1. Ile wynosi $\sigma(0)$? **Odp.:** 0,5.
+> 2. Ile wynosi $\operatorname{softmax}(0,0)$? **Odp.:** $(0{,}5;\,0{,}5)$ (równe logity dają równe wagi).
+> 3. $\operatorname{softmax}(\ln1,\ \ln3)=$? **Odp.:** $e^{\ln1}=1,\ e^{\ln3}=3$, suma 4, więc $(0{,}25;\,0{,}75)$.
+>
+> **Najczęstszy błąd:** użycie softmax dla zdarzeń, które mogą zajść *razem* (kilka nut naraz). Wtedy każde z nich osobno dostaje sigmoid, a softmax jest dla wyboru jednej opcji z kilku (jak struna).
+>
+> **Co zapamiętać:** Sigmoid = „czy tak?”, softmax = „która z opcji?”, GELU = „zgięcie” dające nieliniowość.
+
+
 
 ## M8. Normalizacja warstw, połączenia resztkowe, dropout
+
+> **Po co nam to?** Głęboka sieć łatwo „wariuje”: liczby rosną, gradient znika. LayerNorm, skróty resztkowe i dropout to trzy sposoby, żeby uczenie było stabilne.
+
 
 **LayerNorm.** Dla wektora cech $z\in\mathbb R^{d}$ (np. $d=64$ kanałów w jednym punkcie):
 
@@ -425,8 +559,22 @@ Warstwa uczy się tylko **poprawki** do wejścia, a gradient może płynąć prz
 
 ![Lewo i środek: LayerNorm „zapomina” skalę wektora: $(1,2,3,6)$ i $(100,200,300,600)$ dają ten sam wynik (słupki się pokrywają). Prawo: połączenie resztkowe $y=x+F(x)$: warstwa $F$ dodaje poprawkę, a czerwony „skrót” pozwala gradientowi płynąć bez tłumienia.](rysunki/r21_ln_residual.png){width=100%}
 
+> **Sprawdź siebie.** Spróbuj sam, potem zajrzyj do odpowiedzi.
+>
+> 1. Znormalizuj $(2,4,6)$ przez LayerNorm ($\gamma=1,\beta=0$). **Odp.:** $\mu=4,\ \sigma=1{,}633$, wynik $(-1{,}225;\ 0;\ 1{,}225)$.
+> 2. Co oznacza $y=x+F(x)$? **Odp.:** warstwa $F$ dodaje poprawkę do wejścia, zamiast je zastępować.
+> 3. Czy dropout działa przy wnioskowaniu? **Odp.:** nie, tylko przy uczeniu.
+>
+> **Najczęstszy błąd:** sądzenie, że LayerNorm uczy się „średniej z całego zbioru”. Liczy się osobno dla każdego wektora, a uczone są tylko $\gamma$ i $\beta$.
+>
+> **Co zapamiętać:** Normalizacja stabilizuje liczby, skrót resztkowy ułatwia przepływ gradientu, dropout zapobiega wkuwaniu na pamięć.
+
+
 
 ## M9. Uwaga (*attention*)
+
+> **Po co nam to?** Nuta nie jest zdarzeniem jednej klatki, więc sieć musi patrzeć na kontekst: wcześniejsze i późniejsze chwile (uwaga w czasie) oraz inne wysokości (uwaga między wysokościami). Uwaga to narzędzie, które wybiera, na co patrzeć.
+
 
 **Intuicja.** Chcemy, żeby każdy element sekwencji (np. klatka w czasie) mógł **wybrać**, na które inne elementy patrzeć i je uśrednić. Robi to mechanizm „zapytanie–klucz–wartość”: każdy element wystawia *zapytanie* ($q$: „czego szukam?”), *klucz* ($k$: „co oferuję?”) i *wartość* ($v$: „co przekażę, jeśli mnie wybierzesz”). Im bardziej zapytanie pasuje do klucza (duży iloczyn skalarny), tym większą wagę ma wartość.
 
@@ -465,7 +613,21 @@ Czytaj to tak: zapytanie $q$ jest podobne do kluczy $k_1$ i $k_3$ (oba mają „
 
 **Koszt.** Pełna uwaga na $T$ klatkach potrzebuje $T^2$ wag. Okno $\pm W$ zmniejsza to do $\approx T\cdot(2W+1)$. Implementacja (`model.py:LocalTimeAttention`) dzieli czas na bloki po $W$ klatek; zapytania bloku patrzą na klucze trzech bloków (poprzedni, własny, następny), więc pamięć to $O(T\cdot 3W)$.
 
+> **Sprawdź siebie.** Spróbuj sam, potem zajrzyj do odpowiedzi.
+>
+> 1. Co jest wynikiem uwagi, gdy wszystkie wyniki $q\cdot k$ są równe? **Odp.:** równe wagi $1/n$, czyli zwykła średnia wartości.
+> 2. Co robi wynik $-\infty$? **Odp.:** po softmaksie daje wagę 0; tak działa maska okna i tryb przyczynowy.
+> 3. Po co dzielimy przez $\sqrt{d_h}$? **Odp.:** żeby iloczyny skalarne nie rosły z wymiarem, bo duże wartości robią softmax „twardym” i gradient prawie znika.
+>
+> **Najczęstszy błąd:** czytanie wag $a_{ij}$ jako „prawdopodobieństwa, że nuta tam jest”. To tylko *skąd czerpać informację*; decyzję podejmują dopiero głowice.
+>
+> **Co zapamiętać:** Uwaga = ważona średnia wartości, z wagami zależnymi od podobieństwa zapytania do klucza (plus wyuczona premia za odległość).
+
+
 ## M10. Funkcje straty: jak model „wie”, że się myli
+
+> **Po co nam to?** Aby sieć mogła się uczyć, musi dostać jedną liczbę mówiącą „jak bardzo się mylisz”. Strata jest tą liczbą.
+
 
 **Intuicja.** Strata $\mathcal L$ to jedna liczba mierząca, jak bardzo przewidywania odbiegają od prawdy. Uczenie = szukanie parametrów, które ją minimalizują.
 
@@ -498,7 +660,21 @@ Klasy z etykietą $-1$ (nieznane) są pomijane (`ignore_index`).
 
 $$\mathcal L = w_\text{on}\mathcal L_\text{on} + w_\text{fr}\mathcal L_\text{fr} + w_\text{off}\mathcal L_\text{off} + w_\text{vel}\mathcal L_\text{vel} + w_\text{tab}\mathcal L_\text{tab}.$$
 
+> **Sprawdź siebie.** Spróbuj sam, potem zajrzyj do odpowiedzi.
+>
+> 1. Ile wynosi BCE dla $y=1,\ p=0{,}5$? **Odp.:** $-\ln0{,}5=0{,}693$; z $\alpha=4$ będzie $4\cdot0{,}693=2{,}77$.
+> 2. Dlaczego $\alpha=4$ dla początków? **Odp.:** początków jest bardzo mało, więc bez wagi sieć mogłaby wszędzie odpowiadać „nie”.
+> 3. Po co maska $m$? **Odp.:** by nie karać za miejsca, o których nie wiemy, jaka jest prawda (inne źródło danych, dopełnienie wycinka).
+>
+> **Najczęstszy błąd:** porównywanie strat o różnych skalach „na oko”. Dlatego w sumie łącznej każda część ma swoją wagę $w$.
+>
+> **Co zapamiętać:** Strata = średnia kara za błędy; im pewniejszy błąd, tym większa kara.
+
+
 ## M11. Optymalizacja: jak sieć się uczy
+
+> **Po co nam to?** Znamy już „co” (sieć) i „jak mierzymy błąd” (strata). Ten rozdział mówi, **jak poprawiać wagi**, żeby błąd malał.
+
 
 **Spadek gradientu.** Parametry $\theta$ (wszystkie wagi) zmieniamy w kierunku **przeciwnym do gradientu** straty (gradient = wektor pochodnych cząstkowych $\partial\mathcal L/\partial\theta_i$, wskazuje kierunek najszybszego wzrostu):
 
@@ -540,7 +716,21 @@ Wartości dla $\eta_0=10^{-3}$: $q=0\to 10^{-3}$; $0{,}25\to 8{,}5\cdot10^{-4}$;
 
 **Mieszana precyzja (AMP).** Obliczenia w 16-bitowych liczbach zmiennoprzecinkowych (szybciej, mniej pamięci); strata jest mnożona przez duży współczynnik (*GradScaler*), by małe gradienty nie wyzerowały się w float16, a potem dzielona z powrotem.
 
+> **Sprawdź siebie.** Spróbuj sam, potem zajrzyj do odpowiedzi.
+>
+> 1. Ile wynosi $\eta$ po połowie kosinusowego harmonogramu dla $\eta_0=10^{-3}$? **Odp.:** $5\cdot10^{-4}$.
+> 2. Co robi przycinanie gradientu przy $\lVert g\rVert_2=5$ i progu 1? **Odp.:** skaluje gradient przez $1/5$, więc jego norma staje się 1.
+> 3. Czym AdamW różni się od Adama? **Odp.:** rozpad wag $\lambda\theta$ jest dodawany *osobno*, poza adaptacyjnym skalowaniem gradientu.
+>
+> **Najczęstszy błąd:** myślenie, że większe tempo uczenia zawsze uczy szybciej. Za duże powoduje skakanie wokół minimum albo rozbieżność, dlatego jest rozgrzewka i wygaszanie.
+>
+> **Co zapamiętać:** Uczenie = wiele małych kroków w stronę mniejszej straty; Adam dobiera wielkość kroku osobno dla każdej wagi.
+
+
 ## M12. Dekodowanie: od map prawdopodobieństw do listy nut
+
+> **Po co nam to?** Sieć daje mapy prawdopodobieństw, a użytkownik chce listę nut. Dekoder jest „tłumaczem” z jednego na drugie i działa na prostych regułach.
+
 
 Sieć zwraca **mapy** $p_\text{on}(t,s)$, $p_\text{fr}(t,s)$, $p_\text{off}(t,s)\in(0,1)$ — dla każdej klatki i półtonu. Dekoder (deterministyczny algorytm bez uczenia) zamienia je w nuty za pomocą **progów** $\theta$ i **lokalnych maksimów**:
 
@@ -548,7 +738,21 @@ $$\text{pik w czasie: }\quad p(t,s)\ge\theta,\ \ p(t,s)\ge p(t-1,s),\ \ p(t,s)>p
 
 (Lokalne maksimum, żeby szerokie „wzgórze” prawdopodobieństwa dało **jedną** nutę, nie kilka. Warunek $\ge$ z lewej i $>$ z prawej wybiera pierwszy z równych szczytów.) Szczegóły algorytmu w rozdz. 8.
 
+> **Sprawdź siebie.** Spróbuj sam, potem zajrzyj do odpowiedzi.
+>
+> 1. W ciągu $p_\text{on}=(0{,}2;\ 0{,}7;\ 0{,}65;\ 0{,}5)$ przy progu $\theta=0{,}6$ gdzie jest pik? **Odp.:** w drugim elemencie (0,7: $\ge0{,}6$ i większe od sąsiadów 0,2 i 0,65).
+> 2. Dlaczego potrzebujemy lokalnego maksimum, a nie tylko progu? **Odp.:** bez tego szeroki garb prawdopodobieństwa dałby kilka nut zamiast jednej.
+> 3. Czy dekoder jest uczony gradientem? **Odp.:** nie, jego progi są hiperparametrami strojonymi na walidacji.
+>
+> **Najczęstszy błąd:** ustawianie progów na zbiorze testowym. To „oszukiwanie” (przeciek informacji); progi strojono wyłącznie na walidacji.
+>
+> **Co zapamiętać:** Dekoder = progi + lokalne maksima, bez uczenia.
+
+
 ## M13. Miary jakości
+
+> **Po co nam to?** Aby powiedzieć, czy model jest dobry, i porównać go uczciwie z innym. Każda miara odpowiada na inne pytanie.
+
 
 **Precyzja, czułość, F1.** Gdy porównujemy listę nut systemu z wzorcem: TP (prawdziwie pozytywne: trafione nuty), FP (fałszywe alarmy: nuty systemu bez odpowiednika), FN (pominięte: nuty wzorca bez odpowiednika).
 
@@ -593,6 +797,17 @@ $$\text{ECE}=\sum_{b=1}^{B}\frac{|\mathcal B_b|}{N}\,\Big|\overline{y}(\mathcal 
 **Przedział ufności bootstrap.** Mamy wyniki $x_1,\dots,x_n$ po plikach. Losujemy $n$ plików **ze zwracaniem**, liczymy średnią; powtarzamy $B$ razy (2000). Środkowe 95 % tych średnich (percentyle 2,5 i 97,5) to przedział ufności średniej. **Sparowany** bootstrap porównuje system A i B na *tych samych* plikach: bootstrapuje różnice $d_i=a_i-b_i$; jeśli przedział różnicy nie zawiera zera (a $p=\Pr(\bar d^*\le0)$, czyli odsetek losowań bootstrapu, w których średnia różnica wyszła $\le0$, jest małe), poprawa jest istotna statystycznie.
 
 ![Lewo: wykres kalibracji (poglądowy). Gdyby „0,8” oznaczało zawsze 80 %, słupki leżałyby na przerywanej przekątnej; ECE to średnia ważona długości czerwonych odcinków. Prawo: bootstrap: wielokrotnie losujemy pliki z zwracaniem i liczymy średnią; środkowe 95 % tych średnich to przedział ufności. Dane obu paneli są syntetyczne, służą tylko do zrozumienia metody.](rysunki/r25_ece_bootstrap.png){width=100%}
+
+> **Sprawdź siebie.** Spróbuj sam, potem zajrzyj do odpowiedzi.
+>
+> 1. $TP=30,\ FP=10,\ FN=20$. Ile wynoszą $P$, $R$, $F_1$? **Odp.:** $P=0{,}75,\ R=0{,}6,\ F_1=60/90=0{,}667$.
+> 2. Czym różni się mikro od makro? **Odp.:** mikro sumuje nuty ze wszystkich plików, makro uśrednia wyniki plików (każdy plik waży tyle samo).
+> 3. Co znaczy, że przedział bootstrap różnicy $[0{,}46;\,0{,}83]$ nie zawiera 0? **Odp.:** poprawa jest istotna statystycznie.
+>
+> **Najczęstszy błąd:** uznanie wyniku bez przedziału ufności za pewny. Różnica 0,3 pkt na 12 plikach może być tylko szumem.
+>
+> **Co zapamiętać:** F1 łączy precyzję i czułość, a przedział ufności mówi, ile możemy temu wynikowi ufać.
+
 
 
 ## M14. Jak to wszystko się łączy (mapa myślowa)
@@ -710,6 +925,9 @@ w=\operatorname{Conv}_{3\times1}^{(d)}(v),\qquad
 * $\operatorname{DW}_{1\times5}$ — filtr głębokościowy po sąsiednich binach (M6): rozstrojenie i nieharmoniczność (sztywna struna ma alikwoty nieco wyżej niż $h f_0$);
 * $\operatorname{Conv}_{3\times1}^{(d)}$ — filtr w czasie z dylatacją $d\in\{1,2,4\}$ w kolejnych blokach.
 
+> **P
+
+
 ## 5.3. Zejście do półtonów i osadzenie wysokości
 
 Konwolucja $1\times3$ z krokiem 3 sprowadza 159 binów do 53 półtonów (wyjście $s$ widzi biny $3s,3s+1,3s+2$) i zwiększa liczbę kanałów z 48 do $D=64$. Do wyniku dodajemy wyuczony wektor $e_s\in\mathbb R^{64}$ dla każdego półtonu (*osadzenie wysokości*, $53\cdot64=3392$ parametrów):
@@ -717,6 +935,9 @@ Konwolucja $1\times3$ z krokiem 3 sprowadza 159 binów do 53 półtonów (wyjśc
 $$h^{(0)}_{t,s}=\operatorname{Conv}_{1\times3,\ \text{stride }3}(y)_{t,s}+e_s .$$
 
 Dzięki $e_s$ sieć wie, w którym rejestrze jest kandydat (niskie nuty gitary zachowują się inaczej niż wysokie).
+
+> **P
+
 
 ## 5.4. Uwaga w czasie
 
@@ -726,6 +947,9 @@ $$a^{(\text{time})}_{ij}=\operatorname{softmax}_{j:\,|j-i|\le W}\!\left(\frac{q_
 
 Premia $b^{(\text{time})}$ ma $2W+1=87$ wartości na głowę. Cel: zdecydować, czy nuta „trwa dalej”, jest ponownym szarpnięciem, czy kończy się, na podstawie kontekstu ±1 s. Wariant przyczynowy (`causal=True`) dopuszcza tylko $j\le i$ (tryb na żywo). Poprzednia generacja miała uwagę wyłącznie wstecz, choć analizowała całe nagranie.
 
+> **P
+
+
 ## 5.5. Uwaga między wysokościami (nowość)
 
 W jednej klatce $t$ traktujemy 53 półtony jako sekwencję i stosujemy uwagę (M9) **bez okna** (53 elementy):
@@ -733,6 +957,9 @@ W jednej klatce $t$ traktujemy 53 półtony jako sekwencję i stosujemy uwagę (
 $$a^{(\text{pitch})}_{ij}=\operatorname{softmax}_{j}\!\left(\frac{q_i\cdot k_j}{\sqrt{d_h}}+r_{\,j-i}\right),\qquad j-i\in\{-52,\dots,52\}.$$
 
 Premia $r$ ma $2S-1=105$ wartości na głowę; może się nauczyć, że odległości 12 (oktawa), 19 (oktawa + kwinta), 24 itd. są wyjątkowe — dokładnie te, w których alikwoty jednej nuty zlewają się z innymi nutami. Sieć ma więc mechanizm, by rozstrzygnąć „ten pik w $2f_0$ jest alikwotem nuty niżej czy osobną nutą”. Uwaga ta widzi też **akord jako całość**.
+
+> **P
+
 
 ## 5.6. Warstwa kontekstu i pole widzenia
 
@@ -749,6 +976,9 @@ gdzie TA — uwaga w czasie, PA — uwaga między wysokościami, a FF $=W_2\oper
 $$\text{halo}=8+172=180\ \text{klatek}\approx4{,}2\ \text{s}.$$
 
 Wnioskowanie na całym nagraniu (`Gen6.predict`) dzieli je na kawałki po 512 klatek z zakładką 180 klatek z każdej strony i odrzuca zakładkę, więc wynik **nie zależy od długości kawałka** (sprawdza to test).
+
+> **P
+
 
 ## 5.7. Głowice
 
@@ -772,6 +1002,9 @@ $$g_{i,\varnothing}(t)=\operatorname{MLP}_\text{sil}\!\Big(\max_{f}\,h_{t,s_{i,f
 
 Wynik: wektor 21 logitów na strunę, a $p_{i}=\operatorname{softmax}(g_{i,\varnothing},g_{i,0},\dots,g_{i,19})$ (M7). Ten projekt ma zaletę: logit „struna $i$ gra próg $f$” jest liczony z cech **tego półtonu**, który ten próg produkuje, więc tabulatura jest powiązana z detekcją wysokości.
 
+> **P
+
+
 # 6. Funkcja straty
 
 Niech $\mathrm{valid}_t\in\{0,1\}$ oznacza, że klatka $t$ nie jest dopełnieniem krótkiego wycinka. Maski: $m_\text{head}(t,s)=\mathrm{valid}_t\cdot a_\text{head}$.
@@ -789,6 +1022,9 @@ $$\boxed{\mathcal L=1{,}0\,\mathcal L_\text{on}+1{,}0\,\mathcal L_\text{fr}+0{,}
 
 (domyślnie bez straty ogniskowej: $\gamma=0$, bez wygładzania etykiet.) Uwaga o głośności: **żadne źródło danych nie ma etykiet głośności**, więc $\sum\mu=0$, $\mathcal L_\text{vel}=0$ i głowica głośności pozostaje nieuczona (jej wyjście nie jest zwracane).
 
+> **P
+
+
 # 7. Uczenie
 
 * **Optymalizator:** AdamW, $\lambda=10^{-4}$, przycinanie gradientu do normy 1, mieszana precyzja fp16 na GPU Tesla T4.
@@ -796,6 +1032,9 @@ $$\boxed{\mathcal L=1{,}0\,\mathcal L_\text{on}+1{,}0\,\mathcal L_\text{fr}+0{,}
 * **Harmonogram:** rozgrzewka 1000 kroków, potem kosinus (M11). Sesja 1: $\eta_0=10^{-3}\to0$, 36 epok × 1000 kroków. Sesja 3: restart $4\cdot10^{-4}$, dodane dane zestawu 2 i augmentacje (12 epok, zatrzymana przez wczesne zatrzymanie — błąd konfiguracji, jak odnotowano w dzienniku). Sesja 4: wznowienie od epoki 47, $3\cdot10^{-4}\to0$ kosinusem od *czasu* (harmonogram kończy się dokładnie w terminie), 49 epok. Razem **97 epok**, 7,3 + 2,9 + 11 ≈ 21 h uczenia.
 * **Wybór modelu:** epoka o najwyższym F1 nut na stałej próbie walidacyjnej 180 nagrań ze wszystkich źródeł: epoka 29 (89,42 %) w sesji 1, epoka **81 (90,27 %)** w sesji 4 — to jest model końcowy.
 * **Augmentacje** (każda losowana niezależnie): zmiana poziomu $\pm6$ dB (dodanie $g/60$ do wartości znormalizowanych), szum gaussowski $\sigma=0{,}02$, maskowanie pasm i chwil (SpecAugment), zmiana tempa $\times\exp(\mathcal U(-\ln1{,}12,\ln1{,}12))$ (losowa liczba z tego przedziału, każda równie prawdopodobna; zob. M0) z $p=0{,}5$ przez rozciągnięcie wycinka i map, **rozstrojenie** (przesunięcie cech o $\pm1$ bin = ±33 ¢, etykiety bez zmian; $p=0{,}3$), **niedokładne etykiety** (przesunięcie początków/końców o ±1 klatkę; $p=0{,}3$), transpozycja o ±2 półtony ($p=0{,}3$; tabulatura wtedy nieznana).
+
+> **P
+
 
 # 8. Dekoder
 
@@ -837,6 +1076,9 @@ $$J=100\cdot\frac{\sum_{z}w_z\,\overline{\tfrac12\big(F_\text{on}+F_\text{on+off
 
 Największy wkład dało wyłączenie nut bez wykrytego początku ($+0{,}75$ pkt celu); pozostałe zmiany — po 0,02–0,12 pkt, czyli na granicy szumu. Cel na walidacji wzrósł z 79,57 do 80,87.
 
+> **P
+
+
 # 9. Protokół ewaluacji
 
 Wszystkie miary (M13) są liczone przez ten sam moduł numpy, który przyjmuje listy nut, więc tak samo ocenia Gen 6 i wyniki innych generacji silnika. Implementacje porównano z `mir_eval` 0.8 z dokładnością $10^{-9}$ (testy automatyczne). Raportujemy:
@@ -849,6 +1091,9 @@ Wszystkie miary (M13) są liczone przez ten sam moduł numpy, który przyjmuje l
 * statystyka **makro** (średnia po nagraniach) z 95 % przedziałem bootstrap po plikach oraz sparowany bootstrap przy porównaniach.
 
 **Zasada oddzielenia danych:** progi dekodera stroiliśmy na walidacji; test (700 nagrań) nie brał udziału ani w uczeniu, ani w wyborze epoki, ani w strojeniu progów. Najlepszy próg początków obliczony *na teście* (0,82) jest podany tylko informacyjnie.
+
+> **P
+
 
 # 10. Wyniki
 
@@ -907,6 +1152,20 @@ Nagranie 39 s, 4 rdzenie CPU: cechy 1,9 s + sieć 2,1 s ≈ 4,0 s, czyli **0,10 
 # 12. Podsumowanie
 
 Gen 6 łączy cztery pomysły: (i) cechy HCQT z drobniejszym krokiem czasowym, (ii) *blok harmoniczny*, który widzi cały szereg alikwotów kandydata na wysokość, (iii) uwagę w czasie i między wysokościami, (iv) uczenie wielozadaniowe z maskami dostępności etykiet. Przy 249 tys. parametrów model osiąga makro-F1 nut 86,6 % na 700 niewidzianych nagraniach, a na GuitarSet 87,3 % (akompaniament) i 90,7 % (melodie), wobec 75,6 % i 83,4 % w poprzedniej generacji, przy czasie analizy 0,1 czasu nagrania na 4 rdzeniach. Główne otwarte problemy: błędy oktawowe, brak danych prawdziwej gitary, brak ablacji.
+
+# Najważniejsze myśli (podsumowanie dla uczącego się)
+
+1. Dźwięk to ciąg próbek; wysokość mierzymy logarytmicznie (półtony, centy).
+2. Każda nuta ma szereg alikwotów, który na osi logarytmicznej wygląda tak samo dla każdej wysokości.
+3. HCQT = widmo w skali logarytmicznej z kanałem na każdy alikwot, w decybelach, znormalizowane do głośności.
+4. Blok harmoniczny to filtr, który czyta siedem miejsc alikwotów naraz.
+5. Uwaga w czasie mówi „co działo się wcześniej i później”, uwaga między wysokościami „co gra obok”.
+6. Pięć głowic odpowiada na pięć pytań; tabulatura wybiera struny i progi softmaksem.
+7. Strata to suma ważonych kar, z maskami dla brakujących etykiet.
+8. AdamW z harmonogramem kosinusowym uczy wagi; progi dekodera strojono osobno na walidacji.
+9. Jakość mierzymy F1 nut z tolerancją 50 ms i ćwierć tonu, z przedziałami bootstrap.
+10. Model uzyskuje makro-F1 nut 86,6 % na teście; największe słabości to błędy oktawowe i niewielka ilość prawdziwej gitary w danych.
+
 
 ---
 
