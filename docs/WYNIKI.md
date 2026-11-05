@@ -1,6 +1,6 @@
 # Wyniki gen 6: wszystkie kroki po kolei
 
-Stan na 4 listopada 2026, ok. 16:00 UTC. Sesja 4 (uczenie) trwa i nie ma jeszcze wyników. Pliki obok: `wyniki/uczenie.png` (krzywe),
+Stan na 5 listopada 2026. Sesje 1, 3 i 4 zakończone; wyniki końcowe (sesja 4) w sekcji 7 na dole. Pliki obok: `wyniki/uczenie.png` (krzywe),
 `wyniki/epoki.csv` (wszystkie epoki), `wyniki/test_grupy.csv` (wszystkie grupy testowe, mikro i makro, 24 miary).
 
 ## 1. Dane
@@ -25,8 +25,8 @@ Cechy HCQT: krok 23 ms, 9 kanałów × 159 binów, float16; razem 14,8 GB (zesta
 | sesja 1 | 36 epok × 1000 kroków, lr 1e-3 → 0 (kosinus); 7,3 h uczenia (nowa wersja kodu skończyłaby ok. 3 h później, patrz niżej); 12 min/epoka |
 | sesja 2 | zatrzymana na prośbę po kilku minutach (bez wyników) |
 | sesja 3 | 12 epok (36–47), lr 4e-4, dane zestawów 1 i 2, augmentacje; zatrzymana przez early stop po 12 epokach bez poprawy rekordu (plan: do 22:00 UTC) |
-| sesja 4 | w toku od 14:26 UTC, 11,5 h, wznowienie od stanu z epoki 47, lr 3e-4; koniec uczenia 01:14 UTC |
-| limit GPU | zużyte 11,67 h z 30 h (po sesji 3), wolne 18,3 h; sesja 4 zużyje ok. 11,5 h |
+| sesja 4 | 14:26–01:24 UTC, 49 epok (48–96), wznowienie od epoki 47, lr 3e-4 → 0; najlepsza epoka 81 (90,27 %) |
+| limit GPU | zużyte 22,6 h z 30 h (po sesji 4), wolne 7,4 h (odnowienie 7 listopada) |
 
 Wybór najlepszej epoki: po F1 nut na walidacji (180 nagrań ze wszystkich źródeł, stała próba). Najlepsza: **epoka 29, 89,42 %**.
 
@@ -174,8 +174,75 @@ czas 5,0 s na 4 rdzeniach (cechy 2,0 s, sieć 3,0 s), czyli ok. 0,17 czasu nagra
 
 ## 6. Stan i problemy
 
-* Sesja 4 (11,5 h) trwa; koniec uczenia 01:14 UTC, ocena do 01:41 UTC. Wyniki dopiszę po zakończeniu.
+* Sesja 4 zakończona; wyniki w sekcji 7.
 * Głowica głośności jest nieuczona (żadne źródło nie ma etykiet głośności), jej wartości nie są zwracane.
 * Wpływ augmentacji (rozstrojenie, przesunięcia etykiet) na wynik nie jest zmierzony osobno; w sesji 3 wynik był ok. 0,3 pkt niżej niż rekord z sesji 1.
 * Wcześniejsze podejrzenie błędu miary AP_frame (wartość powyżej 1 na próbie syntetycznej) nie potwierdziło się na prawdziwych danych: 94,8 %.
 * Dane do dostrajania na piezo: jeszcze brak (strona do opisywania i etap `push.py piezo` są gotowe).
+
+## 7. Wynik końcowy: sesja 4 (stan z 5 listopada 2026)
+
+Sesja 4 trwała od 14:26 do 01:24 UTC: **49 epok (48–96), 11 h**, lr 3e-4 → 0 (kosinus od czasu), bez wczesnego zatrzymania. Razem trening to **97 epok w 3 sesjach**.
+Najlepsza epoka według walidacji: **81, F1 nut 90,27 %** (rekord sesji 1: 89,42 %). Wykresy: `wyniki/trening_calosc.png`, `wyniki/benchmarki.png`. Model w serwerze (`tools/gen6/server/model/best.pt`) to teraz ten z epoki 81.
+
+### Test, 700 nagrań (utwory i gracze spoza uczenia)
+
+| | sesja 1 (epoka 29) | **końcowy (epoka 81)** | zmiana |
+|---|---:|---:|---:|
+| F1 nut, makro razem | 84.8 | **85.9** | +1.1 |
+| nuty z końcem, makro razem | 66.9 | **69.4** | +2.5 |
+| klatki, makro razem | 88.1 | **88.5** | +0.4 |
+| F1 nut, mikro razem | 82.6 | **83.7** | +1.2 |
+| nuty z końcem, mikro razem | 63.7 | **66.2** | +2.5 |
+| GuitarSet akompaniament: F1 nut | 84.4 | **85.1** | +0.8 |
+| GuitarSet akompaniament: z końcem | 68.0 | **70.2** | +2.2 |
+| GuitarSet akompaniament: klatki | 87.9 | **87.9** | +0.0 |
+| GuitarSet akompaniament: tab F1 | 81.9 | **82.2** | +0.4 |
+| GuitarSet akompaniament: trafna struna | 91.2 | **91.3** | +0.1 |
+| GuitarSet akompaniament: TDR | 91.3 | **91.7** | +0.4 |
+| GuitarSet melodie: F1 nut | 88.8 | **89.2** | +0.4 |
+| GuitarSet melodie: z końcem | 77.9 | **79.4** | +1.6 |
+| GuitarSet melodie: klatki | 88.2 | **88.7** | +0.5 |
+| GuitarSet melodie: tab F1 | 73.8 | **75.1** | +1.2 |
+| GuitarSet melodie: trafna struna | 82.6 | **83.2** | +0.6 |
+| GuitarSet melodie: TDR | 83.9 | **84.6** | +0.7 |
+
+**Istotność (sparowany bootstrap po tych samych 700 plikach, 95 %):** F1 nut +1,14 pkt [0,98; 1,32], z końcem +2,50 pkt [2,19; 2,81], klatki +0,43 pkt [0,32; 0,54]; we wszystkich trzech p < 0,0001.
+Przedziały ufności makro razem: F1 nut **85,9 % [85,0; 86,8]** (było 84,8 [83,8; 85,7]), z końcem **69,4 % [67,9; 71,0]** (było 66,9 [65,4; 68,5]), klatki **88,5 % [87,9; 89,1]** (było 88,1 [87,5; 88,6]).
+Inne miary razem (mikro): mediana błędu początku 7.8 ms (bias 1.0 ms), AP początków 67.7 %, AP klatek 95.2 %, najlepszy próg początków 0.82 (dekoder: 0,5), ECE 0.01, pokrycie nut 85.1 %, poszatkowanie 1.20, błąd oktawowy 24.4 %.
+
+**Gdzie poprawa jest największa:** grupy z mniej niż 12 nagraniami są niepewne. Przy większych grupach (zespoły n=139: +1,2 pkt, gitara klasyczna n=74: +1,0, GuitarSet: +0,4 / +0,7) poprawa jest umiarkowana i zgodna z całością. **GuitarSet poprawił się najmniej**, bo nowe dane są syntetyczne, a prawdziwej gitary nie przybyło.
+Jedyny spadek: gitara elektryczna (n=9, −0,3 pkt, w granicach szumu).
+
+### Porównanie z gen 5 (README, GuitarSet 03–05)
+
+| | gen 5 | gen 6, sesja 1 | **gen 6, końcowy** |
+|---|---:|---:|---:|
+| F1 nut razem | 79,5 | 86,6 | **87.2** |
+| akompaniament / melodie | 75,6 / 83,4 | 84,4 / 88,8 | **85.1 / 89.2** |
+| z końcem (razem) | 40,9 | 73,0 | **74.8** |
+
+### Szybkość serwera (nagranie 39 s, CPU, 192 nuty)
+
+| wątki | cechy | sieć | razem | ułamek czasu nagrania | 3 min gry |
+|---:|---:|---:|---:|---:|---:|
+| 1 | 1.6 s | 10.1 s | 11.7 s | 0.30 | 54 s |
+| 2 | 1.9 s | 3.7 s | 5.7 s | 0.14 | 26 s |
+| 4 | 1.9 s | 2.1 s | 4.0 s | 0.10 | 19 s |
+
+Na Cloud Run z 1–2 rdzeniami to 26–54 s na 3 minuty gry (plus start kontenera). Maszyna pomiarowa: 4 rdzenie.
+
+### Przebieg treningu (97 epok)
+
+* Sesja 1 (epoki 0–35, 7,3 h): kosinus od 1e-3, 12 min/epoka; walidacja 69,7 → 89,3 %; najlepsza epoka 29 (89,42 %).
+* Sesja 3 (epoki 36–47, 2,9 h): restart lr 4e-4, dane zestawów 1 i 2, augmentacje; wynik na walidacji 88,6–89,15 %; zatrzymana przez early stop (błąd konfiguracji).
+* Sesja 4 (epoki 48–96, 11 h): lr 3e-4 → 0; walidacja rosła od 89,05 % (epoka 48) do 90,0–90,3 % w epokach 74–96; najlepsza epoka 81 (90,27 %).
+* Strata tabulatury: 0,61 (epoka 0) → 0,040 (epoka 35) → 0,153 po restarcie (epoka 36) → 0,046 (epoka 96).
+* Zużycie limitu GPU: 22,6 h z 30 h (wolne 7,4 h do odnowienia 7 listopada).
+
+### Co nie wyszło lub jest niepewne
+
+* Wynik na walidacji GuitarSet i tabulatura (F1 na walidacji 12 nagrań) są po sesjach 3–4 nieco niższe niż w sesji 1 (tab F1 83,6 vs 85,2 %), choć na teście są podobne; walidacja GuitarSet to tylko 12 nagrań.
+* Wpływu poszczególnych augmentacji (rozstrojenie, przesunięcia etykiet) nie mierzyłem osobno; poprawa wynika łącznie z dodatkowych danych, dłuższego uczenia i augmentacji.
+* Progi dekodera nie były stroione: najlepszy próg początków na teście wychodzi 0,82, dekoder używa 0,5. Dostrojenie na walidacji jest następnym krokiem.
+* Głowica głośności nadal nieuczona.
