@@ -12,7 +12,6 @@ model/best.pt), GUTAR_MAX_MB (domyślnie 30; Cloud Run odrzuca zapytania powyże
 from __future__ import annotations
 import hmac
 import os
-import tempfile
 import threading
 import time
 
@@ -79,13 +78,10 @@ def health():
 def transcribe_wav(data: bytes):
     s = _load()
     cfg, net = s['cfg'], s['net']
-    with tempfile.NamedTemporaryFile(suffix='.wav') as f:
-        f.write(data)
-        f.flush()
-        try:
-            x = load_audio(f.name, cfg.features.sr, cfg.features.frontend)
-        except Exception as e:
-            raise HTTPException(400, 'nie można wczytać WAV: %s' % e)
+    try:
+        x = load_audio(data, cfg.features.sr, cfg.features.frontend)  # z pamięci: bez pliku tymczasowego (Windows blokuje go po otwarciu)
+    except Exception as e:
+        raise HTTPException(400, 'nie można wczytać WAV: %s' % e)
     if len(x) < cfg.features.sr * 0.5:
         raise HTTPException(400, 'nagranie krótsze niż 0,5 s')
     t0 = time.time()

@@ -6,9 +6,13 @@ import numpy as np
 
 
 def read_wav(path):
-    """Zwraca (mono float32 w [-1, 1], częstotliwość próbkowania)."""
-    with open(path, 'rb') as f:
-        data = f.read()
+    """Zwraca (mono float32 w [-1, 1], częstotliwość próbkowania). path: ścieżka pliku albo bytes z zawartością WAV (bez pliku
+    tymczasowego, co na Windowsie byłoby blokowane)."""
+    if isinstance(path, (bytes, bytearray, memoryview)):
+        data, path = bytes(path), '<pamięć>'
+    else:
+        with open(path, 'rb') as f:
+            data = f.read()
     if data[:4] != b'RIFF' or data[8:12] != b'WAVE':
         raise ValueError('%s: to nie jest plik WAV' % path)
     pos, fmt, raw = 12, None, None
