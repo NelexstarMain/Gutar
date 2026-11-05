@@ -576,7 +576,7 @@ Wejście: mapy $p_\text{on},p_\text{fr},p_\text{off}$ (prawdopodobieństwa), opc
 2. **Start nuty:** na piku początku rozpoczynamy nową nutę (jeśli trwała poprzednia, kończymy ją — to ponowne szarpnięcie). *Alternatywnie* (gdy nie ma piku) nuta startuje, jeśli $p_\text{fr}\ge\theta_\text{start}$ przez $n_\text{min}$ kolejnych klatek.
 3. **Trwanie:** dopóki $p_\text{fr}(t,s)\ge\theta_\text{fr}$, nuta trwa (`last = t`, `gap = 0`); w przeciwnym razie `gap += 1`, a gdy `gap` $>g_\text{max}$, nuta się kończy.
 4. **Koniec z głowicy końca:** jeżeli $t$ jest lokalnym maksimum $p_\text{off}\ge\theta_\text{off}$ i $t>$`start`, nuta kończy się w $t$.
-5. **Wynik nuty:** wysokość $36+s$; początek $t_0=\max(0,\tau_\text{start})$; koniec $t_1=\max\big(t_0+d_\min,\ \tau_\text{last}+\Delta/2\big)$; pewność $=$ średnie $p_\text{fr}$ w klatkach nuty; głośność $=\hat v(\text{start},s)$; **struna**
+5. **Wynik nuty:** wysokość $36+s$; początek $t_0=\max(0,\tau_\text{start})$; koniec $t_1=\max\big(t_0+d_{\min},\ \tau_\text{last}+\Delta/2\big)$; pewność $=$ średnie $p_\text{fr}$ w klatkach nuty; głośność $=\hat v(\text{start},s)$; **struna**
 $$i^\ast=\arg\max_{i:\,0\le m-o_i<20}\ \frac{1}{|\mathcal N|}\sum_{t\in\mathcal N}p_i(t)\big[\,1+(m-o_i)\,\big],$$
 czyli struna o największym średnim prawdopodobieństwie „gram właśnie ten próg” w klatkach nuty $\mathcal N$.
 6. **Scalanie duplikatów:** dwie nuty tej samej wysokości o początkach bliższych niż $\theta_\text{merge}$ stają się jedną (dłuższą).
@@ -597,7 +597,7 @@ $$J=100\cdot\frac{\sum_{z}w_z\,\overline{\tfrac12\big(F_\text{on}+F_\text{on+off
 | $n_\text{min}$ (min. długość, klatki) | 2 | 2 |
 | $g_\text{max}$ (przerwa, klatki) | 1 | **2** |
 | $\theta_\text{merge}$ [s] | 0,03 | **0,08** |
-| $d_\min$ [s] | 0,06 | 0,06 |
+| $d_{\min}$ [s] | 0,06 | 0,06 |
 
 Największy wkład dało wyłączenie nut bez wykrytego początku ($+0{,}75$ pkt celu); pozostałe zmiany — po 0,02–0,12 pkt, czyli na granicy szumu. Cel na walidacji wzrósł z 79,57 do 80,87.
 
