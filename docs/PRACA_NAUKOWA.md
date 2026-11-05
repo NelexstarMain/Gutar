@@ -18,6 +18,8 @@ Główną część dokumentu stanowi jednak wyjaśnienie **całej matematyki** u
 
 * **Część I** (rozdziały M1–M14) uczy matematyki **po kolei**, każdy wzór ma trzy elementy: *intuicję* (po ludzku), *wzór* i *przykład liczbowy*. Wszystkie liczby w przykładach policzono naprawdę.
 * **Część II** (rozdziały 1–12) to właściwa praca naukowa. Na każdy wzór wskazuje, w którym rozdziale Części I jest wyjaśniony (np. „zob. M9”).
+* **Rysunki** (15 szt.) są generowane skryptem `tools/make_figures_paper.py`: rysunek 4 to prawdziwe wyjście kodu cech, rysunki 13–15 pochodzą z plików wyników w `docs/wyniki/`, a rysunki 7 (środek) i 11 są poglądowe i jako takie opisane.
+* **Przykłady liczbowe** są oznaczone słowem „Przykład” i można je sprawdzić ręcznie.
 * **Dodatki**: tabela wszystkich 249 219 parametrów (A), ściąga symboli (B).
 * Odwołania do kodu mają postać `plik:funkcja` i dotyczą katalogu `tools/gen6/`.
 
@@ -78,6 +80,9 @@ $$m(p) = 36 + \frac{p-1}{3}, \qquad p=0,\dots,158.$$
 
   Zatem bin $p = 3s+1$ leży **dokładnie** na półtonie $36+s$, a biny $3s$ i $3s+2$ to „odrobinę za nisko” i „odrobinę za wysoko” (±33 ¢). Dzięki temu gitara rozstrojona o kilkanaście centów nadal trafia w którąś z trzech komórek.
 
+![Częstotliwość nuty rośnie wykładniczo z numerem MIDI (lewy panel), ale na osi logarytmicznej (prawy panel) półtony są równo oddalone. Pomarańczowe punkty to puste struny gitary. Dlatego model liczy wszystko „po półtonach”, a nie po hercach.](rysunki/r01_skala.png){width=95%}
+
+
 ## M3. Alikwoty (harmoniczne)
 
 **Intuicja.** Szarpnięta struna nie drga tylko jednym tonem. Drga całą rodziną: z częstotliwością podstawową $f_0$ (to ją słyszymy jako wysokość nuty) i z jej **wielokrotnościami** — alikwotami, które nadają barwę. Dlatego nie wystarczy szukać piku widma w $f_0$: pik w $2f_0$ może być zarówno drugim alikwotem niższej nuty, jak i podstawą wyższej (**błąd oktawowy**, największy problem transkrypcji).
@@ -100,6 +105,11 @@ $$k_h = 36\log_2 h \quad\text{binów}.$$
 Oktawa wyżej ($h=2$) to dokładnie 12 półtonów $=36$ binów; kwinta nad oktawą ($h=3$) to $12+7=19$ półtonów $\approx 57$ binów (zaokrąglenie, bo $12\log_2 3 = 19{,}02$). Wartość $h=0{,}5$ to **subharmoniczna**, czyli oktawa niżej: pozwala sieci zauważyć, że „to, co widzę, jest alikwotem czegoś niższego”.
 
 **Kluczowa obserwacja.** Na osi **logarytmicznej** (biny co 1/3 półtonu) układ alikwotów jest taki sam dla każdej nuty: zawsze −36, 0, +36, +57, … binów od podstawy. To pozwala użyć jednego, wspólnego „detektora wzorca” dla wszystkich wysokości (zob. M6, blok harmoniczny).
+
+![Dwie różne nuty (MIDI 40 i 45) na osi logarytmicznej. Prążki to alikwoty $1\times,2\times,\dots,6\times$. Wzór prążków jest identyczny, tylko przesunięty. Dzięki temu jeden filtr rozpoznaje „nutę” w każdej wysokości.](rysunki/r02_alikwoty.png){width=95%}
+
+**Przykład krok po kroku (nuta E2, struna 6 pusta).** Półton $s=40-36=4$, więc bin $p=3\cdot4+1=13$. Blok harmoniczny czyta z tego binu siedem miejsc: $p+k$ dla $k=-36,0,36,57,72,84,93$, czyli biny $-23$ (poza zakresem, wstawia zera), $13,\ 49,\ 70,\ 85,\ 97,\ 106$. Zamieniamy je z powrotem na nuty ze wzoru $m(p)=36+(p-1)/3$: bin 13 → 40 (E2), 49 → 52 (E3), 70 → 59 (B3), 85 → 64 (E4), 97 → 68 (G♯4), 106 → 71 (B4). To dokładnie 1., 2., 3., 4., 5. i 6. alikwot E2. Jeśli w tych siedmiu miejscach wszędzie jest energia, kandydat „E2” jest bardzo prawdopodobny. Jeśli natomiast w binie 13 (podstawa) nic nie ma, a w 49, 85 i 106 jest energia, to raczej gra E3 (jego alikwoty to właśnie 49, 85, 106…), a „E2” byłoby błędem oktawowym. Blok harmoniczny widzi oba te miejsca naraz, więc może to rozróżnić.
+
 
 ## M4. Transformata Fouriera: z drgań do widma
 
@@ -132,6 +142,9 @@ które zaczyna i kończy się zerem (kod: `np.hanning(N+1)[:N]`, tzw. okno okres
 
 Półton przy E2 to 4,9 Hz, więc tylko okno długie (2,69 Hz) potrafi go rozdzielić; dlatego jest potrzebne. Krótkie okno lepiej „widzi” moment szarpnięcia.
 
+![Lewo: okno Hanna wygasza brzegi ramki (linia przerywana: okno prostokątne). Środek i prawo: dwie nuty, E2 (82,4 Hz) i F2 (87,3 Hz), oddalone o półton. Krótkie okno (93 ms) zlewa je w jeden garb, długie (372 ms) rozdziela w dwa piki. Dlatego potrzebne są oba okna.](rysunki/r03_okno.png){width=100%}
+
+
 **Krok (hop).** Ramki przesuwamy o $\text{hop}=256$ próbek: $256/11025 = 23{,}2$ ms. Klatka $t$ ma środek w próbce $t\cdot 256 + N_L/2$, czyli w czasie
 
 $$\tau_t = \frac{256\,t + 2048}{11025}\ \text{s}.$$
@@ -139,6 +152,8 @@ $$\tau_t = \frac{256\,t + 2048}{11025}\ \text{s}.$$
 Obie ramki (długa i krótka) w klatce $t$ mają **ten sam środek**.
 
 **Przykład wymiarów.** Nagranie 23 s ($\approx 253\,575$ próbek) daje $T = (253575 - 4096)/256 + 1 = 975$ klatek.
+
+**Przykład: czas klatki.** Klatka $t=35$ ma środek w $\tau_{35}=(256\cdot35+2048)/11025=(8960+2048)/11025=0{,}9984$ s, czyli niemal dokładnie w 1,0 s nagrania.
 
 ## M5. HCQT: widmo „ułożone” harmonicznie
 
@@ -172,6 +187,12 @@ Interpretacja: 1,0 = głośność równa „prawie najgłośniejszemu” miejscu
 
 Wynik: tensor $X\in\mathbb R^{T\times 9\times 159}$ (kod: `features.py:hcqt`).
 
+**Przykład liczbowy normalizacji.** Niech w pewnym punkcie amplituda wynosi $A=0{,}05$, a 99,5. percentyl nagrania wynosi $L_\text{ref}=-6$ dB. Wtedy $L=20\log_{10}0{,}05=-26{,}0$ dB, więc $X=(-26+6)/60+1=0{,}667$. Gdyby $A$ było dwa razy większe, $L$ wzrosłoby o 6 dB, a $X$ o $6/60=0{,}1$. Punkt 60 dB poniżej odniesienia ($L=-66$ dB) daje $X=0$.
+
+
+![Prawdziwe wyjście `features.py:hcqt` dla syntetycznego sygnału: nuta E2 (od 0,2 s) i trzy nuty akordu (E3, G3, B3, od 1,0 s). Jasność to wartość $X$. Kanał $h$ w binie $p$ pokazuje energię przy częstotliwości $h\cdot f(p)$. Dlatego nuta E2 zapala się w binie E2 w każdym kanale z $h\ge1$ (jej alikwoty leżą w $h f_0$), a dodatkowo: nuta E3 zapala się w kanale $h=2$ w binie E2 (bo $2f(\text{E2})=f(\text{E3})$), a w kanale $h=0{,}5$ nuta E2 zapala się w binie E3 (bo $0{,}5\,f(\text{E3})=f(\text{E2})$). Tak powstają „fałszywi kandydaci”, które sieć musi odrzucić. Kanał krótki (po prawej) wyraźnie pokazuje moment szarpnięcia (pionowa kreska w 1,0 s).](rysunki/r04_hcqt.png){width=100%}
+
+
 ## M6. Konwolucja i jej odmiany
 
 **Intuicja.** Konwolucja to „przesuwane okienko”: mały zestaw wag (filtr, *kernel*) przesuwa się po danych i w każdym miejscu liczy ważoną sumę sąsiadów. Ten sam filtr działa wszędzie, więc jeśli nauczył się rozpoznawać „pik”, rozpozna go w każdej wysokości i w każdej chwili. Mało parametrów, wbudowana niezmienniczość względem przesunięcia.
@@ -183,6 +204,12 @@ $$y_{o}[t,p] = b_o + \sum_{c=1}^{C_\text{in}}\ \sum_{i}\ \sum_{j} W_{o,c}[i,j]\;
 ($d$ — **dylatacja**, patrz niżej; indeksy $i,j$ biegną symetrycznie wokół zera, np. $-1,0,1$.) Liczba parametrów jednej warstwy: $C_\text{out}\cdot C_\text{in}\cdot K_t K_p + C_\text{out}$ (ostatni składnik to obciążenia $b_o$).
 
 **Przykład.** Trzon sieci: $C_\text{in}=9$, $C_\text{out}=H=48$, filtr $3\times7$: $9\cdot 48\cdot 21+48 = 9120$ parametrów. Filtr obejmuje 3 klatki × 7 binów (7 binów $\approx$ 2,3 półtonu).
+
+**Przykład ręczny (1D, żeby było widać każdy krok).** Dane $x=(1,2,3,4,5)$, filtr o trzech wagach $W=(1,0,-1)$ (indeksy $-1,0,1$), poza krawędziami zera. Wzór daje $y[i]=x[i-1]-x[i+1]$, czyli $y=(0-2,\ 1-3,\ 2-4,\ 3-5,\ 4-0)=(-2,-2,-2,-2,4)$. Z dylatacją $d=2$ ten sam filtr patrzy dalej: $y[i]=x[i-2]-x[i+2]$, więc $y=(0-3,\ 0-4,\ 1-5,\ 2-0,\ 3-0)=(-3,-4,-4,2,3)$. Liczba wag się nie zmieniła (3), a pole widzenia urosło. (W bibliotekach uczenia głębokiego „konwolucja” liczy dokładnie taką sumę bez odwracania filtra, i tu też.)
+
+
+![Lewo: bin $p$ (czerwony) i siedem miejsc, z których czyta go blok harmoniczny (liczby to przesunięcia w binach). Prawo: filtr czasowy $3\times1$ z dylatacją $d=1,2,4$ pobiera klatki $t,t\pm d$; trzy bloki z rosnącą dylatacją widzą coraz szerszy czas bez dokładania parametrów.](rysunki/r05_blok.png){width=100%}
+
 
 **Warianty użyte w modelu:**
 
@@ -215,6 +242,9 @@ $$\operatorname{GELU}(z) = z\cdot\Phi(z) = z\cdot\tfrac12\Big(1+\operatorname{er
 
 gdzie $\Phi$ to dystrybuanta rozkładu normalnego. $\operatorname{GELU}(-1)=-0{,}159$, $\operatorname{GELU}(0)=0$, $\operatorname{GELU}(1)=0{,}841$, $\operatorname{GELU}(2)=1{,}954$.
 
+![Sigmoid (lewo), GELU z porównaniem do ReLU (środek) oraz kara BCE (prawo): dla $y=1$ kara $-\alpha\ln p$ rośnie bardzo szybko, gdy $p\to0$; czerwona krzywa ($\alpha=4$) leży 4 razy wyżej niż niebieska, więc przeoczenie początku nuty boli mocniej niż fałszywy alarm.](rysunki/r08_funkcje.png){width=100%}
+
+
 ## M8. Normalizacja warstw, połączenia resztkowe, dropout
 
 **LayerNorm.** Dla wektora cech $z\in\mathbb R^{d}$ (np. $d=64$ kanałów w jednym punkcie):
@@ -223,6 +253,8 @@ $$\operatorname{LN}(z)_i = \gamma_i\,\frac{z_i-\mu}{\sqrt{\sigma^2+\varepsilon}}
 \mu=\frac1d\sum_i z_i,\quad \sigma^2=\frac1d\sum_i (z_i-\mu)^2 .$$
 
 Czyli: odejmij średnią, podziel przez odchylenie standardowe (wektor ma średnią 0 i wariancję 1), a potem pozwól sieci nauczyć się własnej skali $\gamma_i$ i przesunięcia $\beta_i$ ($2d$ parametrów). Stabilizuje uczenie: wartości nie rosną ani nie maleją w kolejnych warstwach.
+
+**Przykład.** $z=(1,2,3,6)$: $\mu=3$, $\sigma^2=(4+1+0+9)/4=3{,}5$, $\sigma=1{,}871$. Po normalizacji (dla $\gamma=1,\beta=0$): $(-1{,}069;\ -0{,}535;\ 0;\ 1{,}604)$. Średnia jest 0, a wariancja 1, niezależnie od tego, czy wektor był $(1,2,3,6)$, czy $(100,200,300,600)$.
 
 **Połączenie resztkowe (*residual*).** Zamiast $y=F(x)$ liczymy
 
@@ -252,6 +284,13 @@ a_{ij}=\operatorname{softmax}_j\!\Big(\frac{q_i\!\cdot\! k_j}{\sqrt{d_h}} + b_{\
 **Przykład liczbowy (jedna głowa, $d_h=2$).** Zapytanie $q=(1,0)$, klucze $k_1=(1,0)$, $k_2=(0,1)$, $k_3=(1,1)$, wartości $v_1=(1,0)$, $v_2=(0,2)$, $v_3=(3,3)$, bez premii:
 wyniki $q\cdot k/\sqrt2 = (0{,}707;\ 0;\ 0{,}707)$ → wagi softmax $(0{,}401;\ 0{,}198;\ 0{,}401)$ (jak w M7) → wynik
 $y=0{,}401\,(1,0)+0{,}198\,(0,2)+0{,}401\,(3,3)=(1{,}604;\ 1{,}599)$.
+
+Czytaj to tak: zapytanie $q$ jest podobne do kluczy $k_1$ i $k_3$ (oba mają „1” na pierwszej współrzędnej), więc wynik jest głównie mieszanką $v_1$ i $v_3$; $v_2$ dostało tylko 20 % wagi.
+
+**Przykład z modelu.** Uwaga w czasie dla półtonu E4 w klatce $i=100$: zapytanie $q_{100}$ porównujemy z kluczami klatek 57–143 (okno $\pm43$). Jeśli w klatce 98 zaczęła się ta sama nuta, jej klucz jest podobny i dostaje dużą wagę, więc $y_{100}$ „wie”, że nuta trwa od dwóch klatek. Jeśli klucze klatek 101–110 wskazują ciszę, głowica końca może zareagować. Uwaga między wysokościami dla tej samej klatki porównuje E4 z E3 (odległość 12), A3 (odległość 7), A2 (odległość 19)…
+
+![Od lewej: maska okna dwukierunkowego (ciemne = dozwolone), maska przyczynowa (tylko przeszłość), **ilustracja** wyuczonej premii $r_{j-i}$ w uwadze między wysokościami (piki w odległościach oktawy, kwinty-nad-oktawą i dwóch oktaw to przykład tego, czego sieć *może* się nauczyć; wartości są poglądowe i nie pochodzą z modelu), oraz wagi z przykładu liczbowego powyżej.](rysunki/r07_uwaga.png){width=100%}
+
 
 **Maskowanie.** Pozycje niedozwolone dostają wynik $-\infty$, więc po softmaksie waga $=0$. Tak realizuje się:
 
@@ -325,6 +364,10 @@ $$\eta(q)=\eta_0\cdot\tfrac12\big(1+\cos\pi q\big).$$
 
 Wartości dla $\eta_0=10^{-3}$: $q=0\to 10^{-3}$; $0{,}25\to 8{,}5\cdot10^{-4}$; $0{,}5\to 5\cdot10^{-4}$; $0{,}75\to 1{,}5\cdot10^{-4}$; $1\to 0$.
 
+![Tempo uczenia w sesji 1: liniowa rozgrzewka przez 1000 kroków do $10^{-3}$, potem kosinus do zera po 36 000 krokach (36 epok po 1000 kroków).](rysunki/r11_lr.png){width=70%}
+
+**Przykład użycia gradientu (uproszczony).** Jedna waga $\theta=0{,}50$, $\lambda=10^{-4}$, $\eta=10^{-3}$, po korekcie $\hat m=0{,}2$ i $\hat v=0{,}04$ (czyli $\sqrt{\hat v}=0{,}2$). Krok: $\theta\leftarrow0{,}50-10^{-3}\,(0{,}2/0{,}2+10^{-4}\cdot0{,}5)=0{,}50-10^{-3}\cdot1{,}00005=0{,}49900$. Człon z $\hat m/\sqrt{\hat v}$ ma wielkość $\approx1$, więc waga zmienia się o $\approx\eta$, a rozpad wag dokłada tylko $5\cdot10^{-8}$.
+
 **Przycinanie gradientu.** Jeśli norma całego gradientu $\|g\|_2$ przekracza próg $c=1$, skalujemy go: $g\leftarrow g\cdot\min\!\big(1,\ c/\|g\|_2\big)$. Chroni przed pojedynczym „wybuchowym” krokiem.
 
 **Mieszana precyzja (AMP).** Obliczenia w 16-bitowych liczbach zmiennoprzecinkowych (szybciej, mniej pamięci); strata jest mnożona przez duży współczynnik (*GradScaler*), by małe gradienty nie wyzerowały się w float16, a potem dzielona z powrotem.
@@ -352,6 +395,9 @@ Precyzja = „jaka część moich nut jest dobra”, czułość = „jaką czę�
 3. *(tylko w mierze „z końcem”)* $|\text{koniec}_i-\text{koniec}_j|\le\max\big(50\text{ ms},\ 0{,}2\cdot(\text{koniec}_i-\text{początek}_i)\big)$.
 
 Każda nuta może należeć do co najwyżej jednej pary, więc wybieramy **maksymalne skojarzenie** w grafie dwudzielnym algorytmem Hopcrofta–Karpa (1973), złożoność $O(E\sqrt V)$. (50 ms to 2,15 klatki modelu — dlatego krok 23 ms zamiast 46 ms miał znaczenie.)
+
+![Przykład dopasowania. Wzorzec 1 (niebieski) i system 1 (pomarańczowy) mają początki oddalone o 30 ms, więc to trafienie (TP). Wzorzec 2 ma najbliższą nutę systemu 120 ms dalej, więc jest pominięty (FN), a nuty systemu 2 i 3 to fałszywe alarmy (FP). Stąd $P=1/3$, $R=1/2$, $F_1=2\cdot\frac13\cdot\frac12/(\frac13+\frac12)=0{,}4$.](rysunki/r12_dopasowanie.png){width=90%}
+
 
 **Miary klatkowe.** Czas dzielimy na siatkę co 10 ms; w każdej komórce i dla każdej wysokości jest „brzmi/nie brzmi”. Wtedy $TP,FP,FN$ liczymy po komórkach, a ponadto (Poliner i Ellis 2007) $\text{Acc}=\frac{TP}{TP+FP+FN}$ i błędy względem liczby nut wzorca $N_\text{ref}=\sum_t n_\text{ref}(t)$:
 
@@ -424,6 +470,12 @@ Dla nuty o wysokości MIDI $m$, początku $t_\text{on}$, końcu $t_\text{off}$ (
 * **głośność:** $y_\text{vel}(k,s)=$ głośność 0–1 w klatce początku, z maską $=1$ tylko tam, gdzie jest znana;
 * **tabulatura:** dla struny $i$ klasa $c_i(t)\in\{0,1,\dots,20\}$: 0 = struna milczy, $1+f$ = gra próg $f\in\{0,\dots,19\}$, gdzie $f=m-o_i$ i $o_i$ to wysokość struny pustej. Nieznane: $-1$.
 
+**Przykład (jedna nuta).** Nuta E4 ($m=64\Rightarrow s=28$) zaczyna się w $t_\text{on}=1{,}000$ s i kończy w $t_\text{off}=1{,}400$ s. Klatka początku: $k=\operatorname{round}\big((1{,}0\cdot11025-2048)/256\big)=\operatorname{round}(35{,}07)=35$. Mapa początku w kolumnie $s=28$: klatki 34, 35, 36 mają wartości $0{,}4;\ 1;\ 0{,}4$, reszta 0. Mapa „brzmi”: $\tau_t\ge1{,}0-0{,}0116=0{,}988$ s, czyli od $t=35$ (środek $0{,}998$ s), do $\tau_t\le1{,}4$ s, czyli do $t=52$ ($\tau_{52}=1{,}3932$ s; klatka 53 ma $1{,}4166$ s, więc już nie). Koniec: $k_\text{off}=\operatorname{round}((1{,}4\cdot11025-2048)/256)=\operatorname{round}(52{,}29)=52$, wartości $0{,}4;1;0{,}4$ w klatkach 51, 52, 53. Jeśli to nuta ze struny 2 ($o=59$), próg to $64-59=5$, więc klasa tabulatury $=1+5=6$ na strunie 2 w klatkach 35–52, a na pozostałych strunach 0 (milczą).
+
+
+![Mapy celów dla jednej nuty: „brzmi” (zielony schodek), początek (niebieski: 1 w klatce początku i miękkie 0,4 po obu stronach) i koniec (czerwony). Miękkie sąsiedztwo oznacza, że przewidzenie początku o jedną klatkę (23 ms) obok nie jest karane tak mocno jak całkowite chybienie.](rysunki/r09_etykiety.png){width=90%}
+
+
 ## 3.3. Dostępność etykiet
 
 Każde nagranie niesie wektor dostępności $\mathbf a\in\{0,1\}^5$ (które z głowic: początek, brzmi, koniec, głośność, tabulatura ma *naprawdę* zaadnotowane). Strata (rozdz. 6) mnoży błąd głowicy przez $a_\text{head}$. Dzięki temu można mieszać źródła, np. GuitarSet (ze strunami, bez głośności) i MIDI (bez strun).
@@ -460,6 +512,9 @@ Niech $B$ — rozmiar paczki. Kolejne kształty (`model.py:Gen6.encode/forward`)
 | głowice | początek/brzmi/koniec/głośność $[B,T,53]$; tabulatura $[B,T,6,21]$ | rozdz. 5.6 |
 
 Łącznie **249 219 parametrów** (rozbicie w dodatku A).
+
+![Schemat sieci Gen 6 z kształtami tensorów. Pięć głowic czyta te same cechy $h_{t,s}\in\mathbb R^{64}$; głowica „brzmi” dostaje dodatkowo $p_\text{on}$ (bez przekazywania gradientu).](rysunki/r06_architektura.png){width=100%}
+
 
 ## 5.2. Blok harmoniczny
 
@@ -583,6 +638,13 @@ czyli struna o największym średnim prawdopodobieństwie „gram właśnie ten 
 
 Nuty o mniej niż $n_\text{min}=2$ klatkach są odrzucane.
 
+![Działanie dekodera na jednym półtonie (kształty krzywych są poglądowe, nie pochodzą z modelu). Nuta 1 zaczyna się na piku $p_\text{on}$ ($>0{,}6$) i kończy na piku $p_\text{off}$ ($>0{,}8$). Nuta 2 ma za niski pik końca (0,3), więc kończy się dopiero, gdy $p_\text{fr}$ spada poniżej 0,6 na dłużej niż $g_\text{max}=2$ klatki.](rysunki/r10_dekoder.png){width=100%}
+
+**Przykład z liczbami.** Dla E4 w klatkach 33–37 niech $p_\text{on}=(0{,}05;\ 0{,}30;\ 0{,}85;\ 0{,}40;\ 0{,}05)$ i $p_\text{fr}=(0{,}2;\ 0{,}7;\ 0{,}9;\ 0{,}9;\ 0{,}9)$. Klatka 35 spełnia $p_\text{on}=0{,}85\ge0{,}6$, jest większa od obu sąsiadów (0,30 i 0,40), a $p_\text{fr}=0{,}9\ge0{,}1$, więc to pik: początek nuty. Czas: $t_0=\tau_{35}=0{,}998$ s. Dalej $p_\text{fr}\ge0{,}6$ trwa, więc nuta trwa. Gdy w klatce 53 $p_\text{off}=0{,}9\ge0{,}8$ jest lokalnym maksimum, nuta kończy się: $t_1=\tau_{53}+\Delta/2=1{,}4165+0{,}0116=1{,}428$ s. Mamy nutę (E4, 0,998 s – 1,428 s).
+
+**Przykład wyboru struny.** Nuta MIDI 52 (E3) może być zagrana na strunie 6 (próg 12), 5 (próg 7) lub 4 (próg 2); struna 3 odpada ($52-55<0$). Jeśli średnie prawdopodobieństwa tych trzech klas w klatkach nuty to $0{,}10;\ 0{,}20;\ 0{,}70$, dekoder wybiera strunę 4 (D) i próg 2.
+
+
 **Strojenie progów.** Progi są hiperparametrami, nie parametrami uczonymi gradientem (dekoder nie jest różniczkowalny). Stroimy je na **walidacji** (222 nagrania: 12 GuitarSet, 150 klasyki, 60 środowisk) *przeszukiwaniem po współrzędnych*: po kolei dla każdego progu sprawdzamy siatkę wartości, zostawiamy najlepszą, powtarzamy dwa przebiegi. Cel:
 
 $$J=100\cdot\frac{\sum_{z}w_z\,\overline{\tfrac12\big(F_\text{on}+F_\text{on+off}\big)}_z}{\sum_z w_z},\qquad w_\text{GuitarSet}=0{,}4,\ w_\text{klasyka}=0{,}4,\ w_\text{środowiska}=0{,}2 .$$
@@ -620,6 +682,9 @@ Wszystkie miary (M13) są liczone przez ten sam moduł numpy, który przyjmuje l
 
 F1 nut na walidacji (stała próba 180 nagrań): epoka 0: 69,7 %; epoka 5: 84,2 %; epoka 10: 86,1 %; epoka 20: 88,3 %; epoka 29: **89,42 %**; po restarcie i dodaniu danych 88,6–89,15 % (sesja 3, ostrożny spadek, bo dane są trudniejsze, a $\eta$ wzrosło); sesja 4: 89,05 % (epoka 48) → 90,0–90,3 % w epokach 74–96, najlepsza **epoka 81: 90,27 %**. Strata tabulatury: 0,61 → 0,040 w sesji 1.
 
+![Lewo: F1 nut na walidacji w kolejnych epokach (trzy sesje). Widać wzrost z 69,7 % do ok. 90 %, spadek po restarcie w sesji 3 i dalszy wzrost w sesji 4. Prawo: strata na uczeniu (skala log). Dane: `docs/wyniki/epoki.csv`.](rysunki/r13_uczenie.png){width=100%}
+
+
 ## 10.2. Test: model końcowy (epoka 81), 700 nagrań, makro
 
 | | domyślny dekoder | **dostrojony dekoder** | zmiana (sparowany bootstrap 95 %) |
@@ -630,6 +695,9 @@ F1 nut na walidacji (stała próba 180 nagrań): epoka 0: 69,7 %; epoka 5: 84,2 
 | precyzja / czułość nut | 88,8 / 84,2 | 93,5 / 82,1 | precyzja w górę, czułość w dół |
 
 Interpretacja: dostrojony dekoder jest ostrożniejszy — produkuje mniej fałszywych nut (precyzja +4,7 pkt), kosztem pomijania kilku prawdziwych (czułość −2,1 pkt). Dla listy nut (MIDI, tabulatura) to korzystny kompromis; miara klatkowa na tym traci, bo krótsze nuty pokrywają mniej czasu (pokrycie czasu nut 85,1 % → 81,1 %).
+
+![Wpływ dostrojenia progów dekodera na teście (makro, 700 nagrań): precyzja rośnie o 4,7 pkt, czułość spada o 2,1 pkt, F1 nut rośnie o 0,6 pkt, a F1 klatkowe spada o 1,3 pkt.](rysunki/r15_dekoder_wyniki.png){width=75%}
+
 
 ## 10.3. GuitarSet (prawdziwa gitara, gracze 03–05)
 
@@ -646,6 +714,8 @@ Liczby Gen 5 pochodzą z opisu projektu (ten sam podział GuitarSet 03–05). Dl
 ## 10.4. Zróżnicowanie instrumentów (sesja 1, makro F1 nut)
 
 Najlepiej: ukulele 94,2 %, pizzicato 93,7 %, gitara elektryczna 90,0 %, klarnet 89,7 %, gitara klasyczna 89,9 %. Najsłabiej: chór 56,0 %, kontrabas 71,0 %, wiolonczela 71,3 %, syntezator 72,8 %, akordeon 74,6 %, skrzypce 75,4 %. Wzorzec jest zgodny z fizyką problemu: instrumenty o szarpniętym, wyraźnym początku (gitara, ukulele, pizzicato) są łatwe; instrumenty smyczkowe, wokalne i z wibrato mają rozmyty początek (tolerancja 50 ms jest trudna) i bogate alikwoty.
+
+![F1 nut (makro) dla każdej grupy testowej, model końcowy (sesja 4, epoka 81). Pomarańczowe słupki to prawdziwa gitara (GuitarSet), niebieskie to nagrania syntetyczne. Dane: `docs/wyniki/test_grupy.csv`.](rysunki/r14_instrumenty.png){width=75%}
 
 ## 10.5. Szybkość
 
