@@ -1,7 +1,7 @@
 ---
 title: "Gutar Gen 6: matematyka wielogłosowej transkrypcji gitary z dźwięku do nut i tabulatury"
 subtitle: "Wyjaśnienie wszystkich wzorów od zera, a potem pełny opis modelu w formie pracy naukowej"
-author: "Projekt Gutar (autor do uzupełnienia)"
+author: "Projekt Gutar"
 date: "5 listopada 2026"
 lang: pl
 ---
@@ -18,7 +18,7 @@ Główną część dokumentu stanowi jednak wyjaśnienie **całej matematyki** u
 
 * **Część I** (rozdziały M0–M14) uczy matematyki **po kolei**; M0 to słownik wszystkich symboli i funkcji, do którego warto wracać, gdy napotkasz nieznany znak, każdy wzór ma trzy elementy: *intuicję* (po ludzku), *wzór* i *przykład liczbowy*. Wszystkie liczby w przykładach policzono naprawdę.
 * **Część II** (rozdziały 1–12) to właściwa praca naukowa. Na każdy wzór wskazuje, w którym rozdziale Części I jest wyjaśniony (np. „zob. M9”).
-* **Rysunki** (25 szt.) są generowane skryptem `tools/make_figures_paper.py`: rysunek 4 to prawdziwe wyjście kodu cech, rysunki z wynikami modelu pochodzą z plików w `docs/wyniki/`, a rysunki oznaczone w podpisie jako poglądowe (m.in. dekoder, premia uwagi, optymalizacja, kalibracja, bootstrap) służą tylko do zrozumienia metody i nie zawierają danych z modelu.
+* **Rysunki** (25 szt.) są generowane skryptem `tools/make_figures_paper.py`: rysunek [[fig:r04_hcqt]] to prawdziwe wyjście kodu cech, rysunki z wynikami modelu pochodzą z plików w `docs/wyniki/`, a rysunki oznaczone w podpisie jako poglądowe (m.in. dekoder, premia uwagi, optymalizacja, kalibracja, bootstrap) służą tylko do zrozumienia metody i nie zawierają danych z modelu.
 * **Przykłady liczbowe** są oznaczone słowem „Przykład” i można je sprawdzić ręcznie.
 * **Dodatki**: tabela wszystkich 249 219 parametrów (A), ściąga symboli (B).
 * Odwołania do kodu mają postać `plik:funkcja` i dotyczą katalogu `tools/gen6/`.
@@ -55,6 +55,10 @@ Idź po kolei, a przy każdym rozdziale Części I rób trzy rzeczy: (1) przeczy
 
 ---
 
+
+```{=latex}
+\clearpage
+```
 
 # CZĘŚĆ I. MATEMATYKA KROK PO KROKU
 
@@ -239,7 +243,7 @@ gdzie $f_s$ to liczba próbek na sekundę. Najwyższa częstotliwość, jaką da
 >
 > 1. Ile próbek ma 2 s nagrania przy 11 025 Hz? **Odp.:** $2\cdot11025=22\,050$.
 > 2. Jaki najwyższy ton da się jeszcze poprawnie zapisać? **Odp.:** $f_s/2=5512{,}5$ Hz (Nyquist).
-> 3. Co się stanie z tonem 7000 Hz? **Odp.:** zostanie zapisany jako „duch” 4025 Hz ($11025-7000$), bo leży powyżej Nyquista (rys. 16).
+> 3. Co się stanie z tonem 7000 Hz? **Odp.:** zostanie zapisany jako „duch” 4025 Hz ($11025-7000$), bo leży powyżej Nyquista (rys. [[fig:r16_probkowanie]]).
 >
 > **Najczęstszy błąd:** uważanie, że „więcej próbek na sekundę” oznacza „wyższy dźwięk”. Częstotliwość próbkowania to szybkość *pomiaru*, a częstotliwość tonu to szybkość *drgań*.
 >
@@ -386,7 +390,7 @@ Obie ramki (długa i krótka) w klatce $t$ mają **ten sam środek**.
 > **Sprawdź siebie.** Spróbuj sam, potem zajrzyj do odpowiedzi.
 >
 > 1. Rozdzielczość FFT dla $N=2048$, $f_s=11025$? **Odp.:** $11025/2048=5{,}38$ Hz.
-> 2. Czy takie okno rozdzieli E2 (82,41 Hz) i F2 (87,31 Hz)? **Odp.:** nie: odstęp to 4,9 Hz, a rozdzielczość 5,38 Hz jest gorsza (rys. 3).
+> 2. Czy takie okno rozdzieli E2 (82,41 Hz) i F2 (87,31 Hz)? **Odp.:** nie: odstęp to 4,9 Hz, a rozdzielczość 5,38 Hz jest gorsza (rys. [[fig:r03_okno]]).
 > 3. Co daje dopełnianie zerami? **Odp.:** gładszy wykres widma, ale *nie* lepszą rozdzielczość (nowej informacji nie ma).
 >
 > **Najczęstszy błąd:** wiara, że dopełnienie zerami poprawia rozdzielczość. Poprawia tylko interpolację, rozdzielczość zależy wyłącznie od długości *prawdziwego* sygnału w oknie.
@@ -819,6 +823,10 @@ $$\underbrace{x[n]}_{\text{M1}}\xrightarrow[\text{M4, M5}]{\text{FFT + max + dB}
 Uczenie: M10 (strata) + M11 (AdamW, harmonogram).
 
 ---
+
+```{=latex}
+\clearpage
+```
 
 # CZĘŚĆ II. PRACA NAUKOWA
 
