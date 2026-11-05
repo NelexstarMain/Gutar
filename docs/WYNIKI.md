@@ -246,3 +246,38 @@ Na Cloud Run z 1–2 rdzeniami to 26–54 s na 3 minuty gry (plus start kontener
 * Wpływu poszczególnych augmentacji (rozstrojenie, przesunięcia etykiet) nie mierzyłem osobno; poprawa wynika łącznie z dodatkowych danych, dłuższego uczenia i augmentacji.
 * Progi dekodera nie były stroione: najlepszy próg początków na teście wychodzi 0,82, dekoder używa 0,5. Dostrojenie na walidacji jest następnym krokiem.
 * Głowica głośności nadal nieuczona.
+
+## 8. Dostrojony dekoder (5 listopada 2026)
+
+Strojenie na walidacji (222 nagrania: 12 GuitarSet, 150 klasyka, 60 środowisk; cel = średnia z F1 nut i F1 nut z końcem, wagi źródeł 0,4 / 0,4 / 0,2), przeszukiwanie po współrzędnych w 2 przebiegach, **test na 700 nagraniach, których strojenie nie widziało**. Kod: `tools/gen6/tune_decoder.py`, wynik: `tools/gen6/server/model/decode.json` (serwer czyta go sam obok `best.pt`; usunięcie pliku wraca do progów domyślnych).
+
+| parametr | domyślny | dostrojony | znaczenie |
+|---|---:|---:|---|
+| th_onset | 0.5 | **0.6** | próg początku nuty |
+| th_onset_frame | 0.3 | **0.1** | wymagane p(brzmi) przy początku |
+| th_frame | 0.5 | **0.6** | próg trwania nuty |
+| th_offset | 0.5 | **0.8** | próg maksimum końca |
+| th_start | 0.7 | **1.01** | nuta bez początku (1,01 = wyłączone) |
+| min_frames | 2 | **2** | minimalna długość [klatki] |
+| gap_frames | 1 | **2** | przerwa kończąca nutę [klatki] |
+| merge_sec | 0.03 | **0.08** | scalanie duplikatów [s] |
+| min_dur | 0.06 | **0.06** | najkrótsza nuta [s] |
+
+Cel na walidacji: 79.57 → **80.87** (GuitarSet 81.2, klasyka 79.0, środowiska 83.8). Największy wkład: **wyłączenie nut bez wykrytego początku** (`th_start` 0,7 → 1,01: +0,75 celu); pozostałe zmiany po 0,02–0,12 (na granicy szumu).
+
+### Test (700 nagrań, makro)
+
+| | domyślny | dostrojony | zmiana (sparowany bootstrap 95 %) |
+|---|---:|---:|---|
+| F1 nut razem | 85.9 | **86.6** | **+0,64** [0,46; 0,83] |
+| nuty z końcem razem | 69.4 | **70.0** | **+0,59** [0,32; 0,85] |
+| klatki razem | 88.5 | 87.3 | **−1,29** [−1,50; −1,10] |
+| precyzja / czułość razem | 88.8 / 84.2 | 93.5 / 82.1 | precyzja w górę, czułość w dół |
+| GuitarSet akompaniament: F1 nut / z końcem | 85.6 / 71.4 | **87.3 / 72.7** | +1.6 / +1.2 |
+| GuitarSet melodie: F1 nut / z końcem | 89.3 / 79.6 | **90.7 / 80.7** | +1.4 / +1.1 |
+
+**Co to znaczy:** dostrojony dekoder jest ostrożniejszy: tworzy mniej fałszywych nut (precyzja 88,8 → 93,5 %), a przy tym trochę częściej gubi prawdziwe (czułość 84,2 → 82,1 %). Dla listy nut (MIDI, tabulatura) to lepszy kompromis: F1 nut i F1 z końcem rosną istotnie, na **GuitarSet o 1,4–1,6 pkt**. Płaci za to miara klatkowa (−1,3 pkt) i pokrycie czasu nut (85,1 → 81,1 %): nuty są nieco krótsze. Lepiej wypada 19 z 31 grup (makro); klasyka zespołowa (mikro) bez zmiany.
+Wzrost na teście (+0,64) jest o połowę mniejszy niż na walidacji (+1,30), co jest typowe dla strojenia na ograniczonym zbiorze. Miary tabulatury, mediana błędu początku (7,3 ms) i błąd oktawowy (20 %) bez zmian.
+Dwa nagrania GuitarSet z testu (nie używane do strojenia): melodia 04_SS1-100-C# F1 0,819 → **0,847**, akompaniament 05_Funk3-98-A 0,941 → **0,945** (tolerancja 50 ms).
+
+**Gdy ważniejsza jest czułość** (nic nie zgubić, a fałszywe nuty poprawia człowiek): usuń `decode.json`, albo ustaw `th_start` 0,7 i `th_frame` 0,5.

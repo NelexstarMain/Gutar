@@ -17,6 +17,8 @@ wpisujesz w polu u góry (przeglądarka go zapamiętuje).
 | `POST /transcribe` (ciało = plik WAV, nagłówek `X-Token`) | JSON: `notes[]` z polami `pitch` (MIDI), `onset`, `offset` [s], `confidence`, `string` (0 = najniższa), `fret`; `timing` (czasy etapów) |
 | `POST /transcribe?format=midi` | plik `.mid` |
 
+Progi dekodera (`model/decode.json`) są dostrojone na walidacji (patrz WYNIKI.md, sekcja 8); usunięcie pliku przywraca domyślne.
+
 Brak `X-Token` albo zły: 401; plik powyżej 30 MB: 413; nie WAV: 400. Serwer bez ustawionego `GUTAR_TOKEN` nie przyjmuje zapytań
 (do prób lokalnych: `GUTAR_ALLOW_OPEN=1`). Głośność nut nie jest zwracana: głowica głośności nie była uczona (żadne źródło danych
 nie ma etykiet głośności), w MIDI wszystkie nuty mają tę samą.
