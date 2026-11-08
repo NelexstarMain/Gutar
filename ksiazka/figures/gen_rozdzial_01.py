@@ -79,3 +79,43 @@ def funkcje_pomocnicze():
 if __name__ == "__main__":
     os_log()
     funkcje_pomocnicze()
+
+
+def tensor():
+    """Tensor X[t,c,p] jako stos 9 macierzy (kanałów): jedna kratka X_{t,c,p} wyróżniona."""
+    from matplotlib.patches import Polygon
+    fig, ax = nowa_figura("tekst", 3.0)
+    ax.set_axis_off(); ax.set_aspect("equal")
+    W, Hh, dx, dy = 6.0, 3.6, 0.55, 0.38          # szerokość i wysokość płata, przesunięcie kolejnych kanałów
+    nc = 9
+    for c in range(nc - 1, -1, -1):                 # od najdalszego do najbliższego
+        x0, y0 = c * dx, -c * dy
+        poly = Polygon([(x0, y0), (x0 + W, y0), (x0 + W, y0 - Hh), (x0, y0 - Hh)], closed=True,
+                       facecolor=JASNONIEBIESKI if c else "#DCEBF7", edgecolor=NIEBIESKI, lw=0.8, alpha=1.0, zorder=nc - c)
+        ax.add_patch(poly)
+    # siatka na przednim płacie (kanał c = 0)
+    for i in range(1, 12):
+        ax.plot([i * W / 12] * 2, [0, -Hh], color=NIEBIESKI, lw=0.35, zorder=20)
+    for j in range(1, 6):
+        ax.plot([0, W], [-j * Hh / 6] * 2, color=NIEBIESKI, lw=0.35, zorder=20)
+    # wyróżniony element X_{t,c,p} na przednim płacie
+    cx, cy = 6 * W / 12, -3 * Hh / 6
+    ax.add_patch(Polygon([(cx, cy), (cx + W / 12, cy), (cx + W / 12, cy - Hh / 6), (cx, cy - Hh / 6)], closed=True,
+                         facecolor=POMARANCZ, edgecolor=CZARNY, lw=0.8, zorder=21))
+    etykieta(ax, (cx + W / 24, cy - Hh / 12), r"$X_{t,c,p}$", fontsize=7, dy=-17)
+    # osie: p (poziomo), t (pionowo w dół), c (w głąb)
+    os_strzalka(ax, (0, 0.35), (W, 0.35), lw=1.0)
+    etykieta(ax, (W / 2, 0.35), r"$p=1,\dots,159$", dy=9)
+    os_strzalka(ax, (-0.35, 0), (-0.35, -Hh), lw=1.0)
+    etykieta(ax, (-0.35, -Hh / 2), r"$t=1,\dots,T$", dx=-26, rotation=90)
+    ax.annotate("", xy=((nc - 1) * dx + 0.0, -(nc - 1) * dy + 0.45 + 0.0), xytext=(W + 0.3, 0.35),
+                arrowprops=dict(arrowstyle="-|>", color=CZARNY, lw=0), alpha=0)
+    os_strzalka(ax, (W + 0.3, 0.0), (W + 0.3 + (nc - 1) * dx * 0.9, -(nc - 1) * dy * 0.9), lw=1.0)
+    etykieta(ax, (W + 0.3 + (nc - 1) * dx * 0.5, -(nc - 1) * dy * 0.5), r"$c=1,\dots,9$", dx=30, dy=6)
+    ax.set_xlim(-1.2, W + 0.3 + (nc - 1) * dx + 1.8); ax.set_ylim(-Hh - (nc - 1) * dy - 0.4, 1.0)
+    fig.tight_layout()
+    zapisz(fig, "tensor")
+
+
+if __name__ == "__main__":
+    tensor()

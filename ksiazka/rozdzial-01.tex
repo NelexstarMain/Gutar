@@ -83,25 +83,9 @@ kanału $c$ i binu $p$.
 
 \begin{figure}[ht]
 \centering
-\begin{tikzpicture}[x=1cm,y=1cm,>=Stealth]
-  % trzy płaszczyzny: kanały
-  \foreach \k in {2,1,0}{
-    \fill[blue!8!white,draw=blue!60!black,thick] (\k*0.38,\k*0.30) rectangle ++(3.8,2.3);
-  }
-  \foreach \i in {0,1,2,3,4,5,6,7}{
-    \draw[blue!40!black,very thin] (0.76+\i*0.45,0.6) -- ++(0,2.3);
-  }
-  \foreach \j in {0,1,2,3,4}{
-    \draw[blue!40!black,very thin] (0.76,0.6+\j*0.46) -- ++(3.6,0);
-  }
-  \draw[wektor] (0.76,0.4) -- node[below]{\small $p=1,\dots,159$} (4.5,0.4);
-  \draw[wektor] (4.7,0.6) -- node[right]{\small $t=1,\dots,T$} (4.7,2.9);
-  \draw[wektor] (0,-0.1) -- (0.76,0.6) node[pos=0.1,left,xshift=-1pt]{\small $c=1,\dots,9$};
-  \fill[orange!70!white,draw=black] (2.2,1.45) rectangle ++(0.45,0.46);
-  \node[font=\small] at (2.42,1.68) {$X_{t,c,p}$};
-\end{tikzpicture}
-\sidecaption{Tensor $X\in\R^{T\times 9\times 159}$ jako stos dziewięciu macierzy (kanałów) o $T$ wierszach i $159$ kolumnach.
-Pomarańczowy kwadracik to jeden element $X_{t,c,p}$; trzy indeksy jednoznacznie wskazują jedną liczbę. \label{rys:tensor}}
+\includegraphics[width=\linewidth]{figures/tensor.pdf}
+\sidecaption{Tensor $X\in\R^{T\times9\times159}$ jako stos dziewięciu macierzy (kanałów); przedni płat ($c=1$) ma narysowaną siatkę: $T$ wierszy (oś $t$, w dół) i $159$ kolumn (oś $p$, poziomo), a kolejne kanały leżą za nim (oś $c$).
+Pomarańczowa kratka to jeden element $X_{t,c,p}$; trzy indeksy jednoznacznie wskazują jedną liczbę. \label{rys:tensor}}
 \end{figure}
 
 \begin{pulapka}

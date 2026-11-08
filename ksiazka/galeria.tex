@@ -8,26 +8,10 @@
 \par\vspace{4mm}\noindent{\Large\bfseries Rysunek 1.1}\quad{\small(plik: rozdzial-01.tex)}\par\smallskip
 \begin{center}
 
-\begin{tikzpicture}[x=1cm,y=1cm,>=Stealth]
-  % trzy płaszczyzny: kanały
-  \foreach \k in {2,1,0}{
-    \fill[blue!8!white,draw=blue!60!black,thick] (\k*0.38,\k*0.30) rectangle ++(3.8,2.3);
-  }
-  \foreach \i in {0,1,2,3,4,5,6,7}{
-    \draw[blue!40!black,very thin] (0.76+\i*0.45,0.6) -- ++(0,2.3);
-  }
-  \foreach \j in {0,1,2,3,4}{
-    \draw[blue!40!black,very thin] (0.76,0.6+\j*0.46) -- ++(3.6,0);
-  }
-  \draw[wektor] (0.76,0.4) -- node[below]{\small $p=1,\dots,159$} (4.5,0.4);
-  \draw[wektor] (4.7,0.6) -- node[right]{\small $t=1,\dots,T$} (4.7,2.9);
-  \draw[wektor] (0,-0.1) -- (0.76,0.6) node[pos=0.1,left,xshift=-1pt]{\small $c=1,\dots,9$};
-  \fill[orange!70!white,draw=black] (2.2,1.45) rectangle ++(0.45,0.46);
-  \node[font=\small] at (2.42,1.68) {$X_{t,c,p}$};
-\end{tikzpicture}
+\includegraphics[width=0.8\linewidth]{figures/tensor.pdf}
 \end{center}
-{\footnotesize Tensor $X\in\R^{T\times 9\times 159}$ jako stos dziewięciu macierzy (kanałów) o $T$ wierszach i $159$ kolumnach.
-Pomarańczowy kwadracik to jeden element $X_{t,c,p}$; trzy indeksy jednoznacznie wskazują jedną liczbę.}\par\bigskip\hrule
+{\footnotesize Tensor $X\in\R^{T\times9\times159}$ jako stos dziewięciu macierzy (kanałów); przedni płat ($c=1$) ma narysowaną siatkę: $T$ wierszy (oś $t$, w dół) i $159$ kolumn (oś $p$, poziomo), a kolejne kanały leżą za nim (oś $c$).
+Pomarańczowa kratka to jeden element $X_{t,c,p}$; trzy indeksy jednoznacznie wskazują jedną liczbę.}\par\bigskip\hrule
 
 \par\vspace{4mm}\noindent{\Large\bfseries Rysunek 1.2}\quad{\small(plik: rozdzial-01.tex)}\par\smallskip
 \begin{center}
@@ -145,18 +129,14 @@ schodzi gładko, ale wolno; pomarańczowa ($\eta=0{,}15$) przeskakuje przez doli
 
 \includegraphics[width=0.8\linewidth]{figures/przeciek.pdf}
 \end{center}
-{\footnotesize Widmo (w decybelach, skala pionowa wspólna, od $-90$ do $0\dB$) tonu z $N=128$ próbek. (a) Ton dokładnie w prążku: okno
-prostokątne (szare) daje wąski pik, ale ze słabo opadającymi listkami (pierwszy $-13\dB$); okno Hanna (niebieskie) ma szerszy pik i listki o ok.\ $18\dB$ niższe.
-(b) Ton w połowie między prążkami: pik jest niższy, a listki prostokątnego okna jeszcze wyższe względem Hanna.}\par\bigskip\hrule
+{\footnotesize Widmo tonu z $N=128$ próbek w decybelach (skala od $-80$ do $0\dB$, wspólna). Ton dokładnie w prążku (linia ciągła) i w połowie między prążkami (przerywana). (a) Okno prostokątne (szare): wąski pik, ale listki boczne opadają wolno; pierwszy ma $-13\dB$ (pomarańczowa kropkowana). (b) Okno Hanna (niebieskie): pik dwa razy szerszy, ale pierwszy listek tylko $-31\dB$ (pomarańczowa kropkowana), a dalsze opadają szybko. Ton między prążkami ma niższy pik w obu oknach.}\par\bigskip\hrule
 
 \par\vspace{4mm}\noindent{\Large\bfseries Rysunek 6.2}\quad{\small(plik: rozdzial-06.tex)}\par\smallskip
 \begin{center}
 
 \includegraphics[width=0.8\linewidth]{figures/rozdzielczosc.pdf}
 \end{center}
-{\footnotesize Widmo (okno Hanna) sumy dwóch sinusoid z oknem $N=4096$ (niebieskie) i $N=1024$ (pomarańczowe); kropkowane pionowe linie to prawdziwe częstotliwości.
-(a) E2 i F2 (półton, $4{,}9\Hz$): długie okno daje dwa bliskie piki w złych miejscach (interferencja), krótkie jeden szeroki pagórek. (b) E2 i F\#2 ($10{,}1\Hz$): długie okno rozdziela dwa
-tony prawie bez błędu położenia, krótkie daje dwa piki odsunięte od prawdy o kilka herców. Dlatego model dostaje dwa okna --- długie dla wysokości, krótkie dla czasu --- i uczy się łączyć wskazówki z wielu klatek.}\par\bigskip\hrule
+{\footnotesize Widmo (okno Hanna) sumy dwóch sinusoid; czarne kropkowane pionowe linie to prawdziwe częstotliwości, kropki to znalezione piki. Niebieskie z wypełnieniem: okno $N=4096$; pomarańczowe: $N=1024$. (a) E2 i F2 (półton, $4{,}9\Hz$): długie okno daje dwa bliskie piki w złych miejscach (interferencja), krótkie jeden szeroki pagórek. (b) E2 i F\#2 ($10{,}1\Hz$): długie okno rozdziela tony prawie bez błędu położenia, krótkie daje dwa piki odsunięte od prawdy o kilka herców. Dlatego model dostaje dwa okna --- długie dla wysokości, krótkie dla czasu --- i uczy się łączyć wskazówki z wielu klatek.}\par\bigskip\hrule
 \clearpage
 \par\vspace{4mm}\noindent{\Large\bfseries Rysunek 7.1}\quad{\small(plik: rozdzial-07.tex)}\par\smallskip
 \begin{center}
