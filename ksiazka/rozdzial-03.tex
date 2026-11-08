@@ -105,10 +105,8 @@ alarmów klatkowych leży dokładnie oktawę od prawdziwej nuty).
 \begin{figure*}[ht]
 \centering
 \includegraphics[width=\linewidth]{figures/szereg-alikwotow.pdf}
-\caption{Widma szarpniętych strun liczone FFT. (a) Oś liniowa: prążki E2 (niebieskie) i E3 (pomarańczowe, nieco
-przesunięte w prawo, żeby były widoczne). Każdy prążek E3 pada na parzysty prążek E2 (tw.~\ref{tw:oktawa-alik}).
-(b) Oś w półtonach $12\log_2(f/f_{E2})$: wzorzec prążków E2 (niebieskie) i A2 (pomarańczowe) to ta sama figura
-przesunięta o 5 półtonów (strzałka); kształt zależy tylko od numeru alikwotu, nie od wysokości.}
+\caption{Widma szarpniętych strun liczone FFT (wysokość słupka --- amplituda względem prążka podstawowego). (a) Oś liniowa: prążki E2 (niebieskie kółka) i pierwsze cztery prążki E3 (pomarańczowe romby, przesunięte nieco w prawo, żeby były widoczne). Szare przerywane pionowe prowadnice stoją na parzystych prążkach E2: każdy prążek E3 trafia dokładnie w jedną z nich (tw.~\ref{tw:oktawa-alik}).
+(b) Oś w półtonach $12\log_2(f/f_{E2})$: wzorzec prążków E2 (niebieskie) i A2 (pomarańczowe) to ta sama figura przesunięta o 5 półtonów (strzałka u góry); cienkie szare łączniki spinają te same numery alikwotów. Kształt zależy tylko od numeru alikwotu, nie od wysokości.}
 \label{rys:szereg}
 \end{figure*}
 
@@ -174,9 +172,7 @@ też jest wysoka (rys.~\ref{rys:salience}).
 \begin{figure}[ht]
 \centering
 \includegraphics[width=\linewidth]{figures/salience.pdf}
-\sidecaption{Salience (suma energii sześciu pierwszych alikwotów) dla szarpniętej struny E3 ($m=52$) w funkcji numeru
-kandydata $m$. Prawdziwa nuta (pomarańczowa) ma najwyższy słupek, ale kandydat o oktawę niżej ($m=40$, niebieski) jest
-niewiele niższy, a ten o oktawę wyżej ($m=64$) też wyraźnie się wyróżnia. Wszystkie wartości liczone z widma FFT jednej nuty. \label{rys:salience}}
+\sidecaption{Salience (suma energii sześciu pierwszych alikwotów, względem największej) dla szarpniętej struny E3 ($m=52$) w funkcji numeru kandydata $m$. Prawdziwa nuta (pomarańczowa) ma najwyższy słupek; pomarańczowa kropkowana pozioma to jej poziom. Kandydat o oktawę niżej ($m=40$, niebieski) jest niewiele niższy, a ten o oktawę wyżej ($m=64$) też się wyróżnia. Szare przerywane pionowe linie to $m=40,52,64$. Wartości liczone z widma FFT jednej nuty. \label{rys:salience}}
 \end{figure}
 
 Wniosek praktyczny: samo sumowanie nie wystarcza i trzeba, by sieć porównywała kandydatów \emph{ze sobą}.

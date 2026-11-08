@@ -10,29 +10,26 @@ def hcqt_przyklad():
     ex, X, _ = gutar.wynik(3, 1, 6.0)
     m, cfg, _ = gutar.model()
     fc = cfg.features
-    # klatka, w której gra najwięcej nut naraz
     cen = fc.frame_center(np.arange(len(X)))
     liczba = [sum(n.onset <= c <= n.offset for n in ex.notes) for c in cen]
     t0 = int(np.argmax(liczba))
-    fig, (a1, a2) = nowa_figura("pelna", 2.9, ncols=2, gridspec_kw={"width_ratios": [1.15, 1]})
-    # (a) kanał h = 1 (długie okno): czas poziomo, wysokość pionowo; kropki to prawdziwe nuty
+    grane = [3 * (int(n.pitch) - fc.midi_lo) + 1 for n in ex.notes if n.onset <= cen[t0] <= n.offset]
+    fig, (a1, a2) = nowa_figura("pelna", 3.7, ncols=2, gridspec_kw={"width_ratios": [1.15, 1]})
     a1.imshow(X[:, 1, :].T, origin="lower", aspect="auto", cmap="viridis", vmin=0, vmax=1.2,
               extent=[0, len(X), 0, X.shape[2]], interpolation="nearest")
     for n in ex.notes:
-        t_on = fc.time_to_frame(n.onset)
-        b = 3 * (n.pitch - fc.midi_lo) + 1
-        a1.plot([t_on], [b], "o", color="white", ms=2.2, mec=POMARANCZ, mew=0.6)
-    a1.axvline(t0 + 0.5, color=POMARANCZ, lw=0.8, ls="--")
-    a1.set_axis_off()
-    panel(a1, "a")
-    # (b) ta sama klatka: 9 kanałów x 159 binów; kolumna = kandydat na wysokość
+        a1.plot([fc.time_to_frame(n.onset)], [3 * (n.pitch - fc.midi_lo) + 1], "o", color="white", ms=3.4, mec=POMARANCZ, mew=0.9)
+    a1.axvline(t0 + 0.5, color=POMARANCZ, lw=1.1, ls="--")
+    a1.set_axis_off(); panel(a1, "a")
     a2.imshow(X[t0], origin="upper", aspect="auto", cmap="viridis", vmin=0, vmax=1.2, interpolation="nearest")
-    for n in ex.notes:
-        if n.onset <= cen[t0] <= n.offset:
-            b = 3 * (n.pitch - fc.midi_lo) + 1
-            a2.plot([b], [-0.9], "v", color=POMARANCZ, ms=3.5, clip_on=False)
-    a2.set_axis_off()
-    panel(a2, "b")
+    for kanal in (5.5,):                                     # granica okna długiego (6 kanałów) i krótkiego (3 kanały)
+        a2.axhline(kanal, color="white", lw=1.6)
+    for r in np.arange(0.5, 8.5, 1.0):
+        a2.axhline(r, color="white", lw=0.4, alpha=0.6)
+    for b in grane:
+        a2.axvline(b, color=POMARANCZ, lw=0.9, ls="--", alpha=0.95)
+        a2.plot([b], [-0.85], "v", color=POMARANCZ, ms=5.5, clip_on=False)
+    a2.set_axis_off(); panel(a2, "b")
     fig.tight_layout(w_pad=1.0)
     zapisz(fig, "hcqt-przyklad")
     return t0, liczba[t0]
