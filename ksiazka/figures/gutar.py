@@ -35,3 +35,33 @@ def wynik(i=3, seed=1, dur=6.0):
     ex = przyklad(i, seed, dur)
     X = hcqt(ex.meta["signal"], cfg.features)
     return ex, X, m.predict(X)
+
+
+def uwaga_wysokosci(X, warstwa=0, t=None):
+    """Wagi uwagi między wysokościami w klatce t (warstwa kontekstu `warstwa`): tablica [n_heads, S, S] (średnia po paczce=1)."""
+    import math
+    import torch
+    import torch.nn.functional as F
+    m, cfg, _ = model()
+    x = torch.from_numpy(X.transpose(1, 0, 2).copy())[None]
+    with torch.no_grad():
+        h = F.gelu(m.stem(x))
+        for b in m.blocks:
+            h = b(h)
+        h = m.down(h).permute(0, 2, 3, 1) + m.pitch_emb                       # [1, T, S, D]
+        for l, c in enumerate(m.ctx):
+            B, T, S, D = h.shape
+            z = c.n1(h).permute(0, 2, 1, 3).reshape(B * S, T, D)
+            if l == warstwa:
+                pass
+            h = h + c.ta(z).view(B, S, T, D).permute(0, 2, 1, 3)
+            if l == warstwa:
+                u = c.n2(h)[0, t]                                             # [S, D]
+                pa = c.pa
+                q, k, v = pa.qkv(u).view(S, 3, pa.nh, pa.dh).permute(1, 2, 0, 3)
+                sc = (q @ k.transpose(-1, -2)) / math.sqrt(pa.dh)
+                i = torch.arange(S)
+                sc = sc + pa.rel[:, (i[None] - i[:, None]) + S - 1]
+                return torch.softmax(sc, dim=-1).numpy()
+            h = h + c.pa(c.n2(h).reshape(B * T, S, D)).view(B, T, S, D)
+            h = h + c.ff(c.n3(h))

@@ -1,0 +1,14 @@
+\chapter*{Przedmowa}\addcontentsline{toc}{chapter}{Przedmowa}
+
+Ta książka tłumaczy, jak działa model \textbf{Gen~6} z projektu \emph{Gutar}: sieć neuronowa, która z nagrania gitary robi listę nut (wysokość, początek, koniec, a także strunę i próg). Nie zakłada niczego poza szkolną matematyką.
+Każde pojęcie, którego model używa --- logarytm, widmo Fouriera, iloczyn skalarny, gradient, konwolucja, uwaga, entropia krzyżowa --- jest najpierw wyjaśnione \emph{od zera}, z obrazem, dowodem i przykładem policzonym do końca. Dopiero potem składamy z nich model, a na końcu zapisujemy go w całości jako jeden opis matematyczny.
+
+\paragraph{Układ.} Część~I (rozdziały 1--11) to matematyka. Część~II (rozdziały 12--17) to model: dane i etykiety, architektura, uczenie, dekoder, wyniki. Część~III (rozdział~18) to pełny opis matematyczny Gen~6 w jednym miejscu. Dodatki zawierają rozbicie liczby parametrów, ściągę wzorów i opis, jak odtworzyć wyniki.
+
+\paragraph{Co tu jest prawdziwe.} Rysunki z rozdziałów o modelu powstały z \emph{prawdziwego, wytrenowanego modelu} (plik \texttt{best.pt}, epoka 81, $249\,219$ parametrów): wagi, wyuczone premie uwagi, mapy uwagi, pole widzenia mierzone gradientem, wyjścia dekodera. Krzywe uczenia i wyniki testu pochodzą z zapisów projektu.
+Każda liczba z przykładów i rozwiązań ćwiczeń została sprawdzona programem (\texttt{weryfikacja.py}); w trakcie pisania kontrola wychwyciła kilka pomyłek, które poprawiono.
+
+\paragraph{Czego tu nie ma.} Książka nie ukrywa ograniczeń modelu: większość danych uczących to synteza, nie badano wpływu poszczególnych elementów (brak ablacji), wynik pochodzi z jednego uczenia, a zachowanie na gitarze nagranej w innych warunkach jest niezmierzone (rozdział~\ref{rozdz:wyniki}). Tam, gdzie coś jest obserwacją z wag modelu, a nie dowodem, napisano to wprost.
+
+\paragraph{Oznaczenia.} Wektory piszemy pogrubioną kursywą ($\vect x$), przecinek dziesiętny zapisujemy jako $1{,}5$. Hasła na marginesie to nowe pojęcia; podpisy rysunków mówią, co widać i co z tego wynika. Rysunki nie zawierają napisów: cały opis jest w podpisie.
+Uwagi zakończone znakiem $\diamondsuit$ to intuicje, pułapki i komentarze; szare pola to przykłady policzone na konkretnych liczbach.

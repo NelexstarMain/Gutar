@@ -74,7 +74,8 @@ W Gen~6 paczka to $16$ losowych wycinków po $192$ klatki ($4{,}4$ s); wycinki s
 W różnych częściach sieci gradienty mają bardzo różną skalę. \emph{Adam} utrzymuje dla każdego parametru wygładzoną średnią gradientu $m$ i wygładzoną średnią jego kwadratu $v$:
 \begin{align*}
 m_t &= \beta_1m_{t-1}+(1-\beta_1)g_t, & v_t &= \beta_2v_{t-1}+(1-\beta_2)g_t^2,\\
-\hat m_t &= \frac{m_t}{1-\beta_1^t}, & \hat v_t &= \frac{v_t}{1-\beta_2^t}, & \theta_t &= \theta_{t-1}-\eta\Big(\frac{\hat m_t}{\sqrt{\hat v_t}+\varepsilon}+\lambda\theta_{t-1}\Big),
+\hat m_t &= \frac{m_t}{1-\beta_1^t}, & \hat v_t &= \frac{v_t}{1-\beta_2^t},\\
+\theta_t &= \theta_{t-1}-\eta\Big(\frac{\hat m_t}{\sqrt{\hat v_t}+\varepsilon}+\lambda\theta_{t-1}\Big),
 \end{align*}
 z $m_0=v_0=0$, zwykle $\beta_1=0{,}9$, $\beta_2=0{,}999$, $\varepsilon=10^{-8}$. Człon $\lambda\theta$ to \emph{zanik wag} (w AdamW dodawany osobno; Gen~6: $\lambda=10^{-4}$), który delikatnie ściąga wagi do zera i ogranicza przeuczenie.
 

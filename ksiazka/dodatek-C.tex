@@ -1,0 +1,24 @@
+\chapter{Jak odtworzyć wyniki z tej książki}\label{dod:odtwarzanie}
+
+Książka powstała tak, by każdą liczbę i każdy wykres dało się odtworzyć z repozytorium \texttt{Gutar}. Poniżej opis, co gdzie leży i jak sprawdzić, że tekst zgadza się z kodem.
+
+\section*{Co jest czym}
+\begin{itemize}
+\item \texttt{ksiazka/rozdzial-NN.tex}, \texttt{dodatek-X.tex} --- źródła rozdziałów; \texttt{ksiazka.tex} --- plik główny; \texttt{preambula.tex} --- styl.
+\item \texttt{ksiazka/figures/gen\_rozdzial\_NN.py} --- po jednym skrypcie wykresów na rozdział; każdy rysunek jest zapisywany jako PDF wektorowy i \emph{sprawdzany asercjami} (np.\ że gradient jest niezerowy dokładnie dla $|t|\le94$).
+\item \texttt{ksiazka/figures/gutar.py} --- most do repozytorium: ładuje wytrenowany model \texttt{tools/gen6/server/model/best.pt}, liczy HCQT funkcją z \texttt{tools/gen6/features.py} i wyjścia sieci.
+\item \texttt{ksiazka/weryfikacja.py} --- sprawdza programem wszystkie liczby z przykładów, twierdzeń i rozwiązań ćwiczeń (po jednej funkcji na rozdział), także na prawdziwym modelu.
+\item Dane z dokumentacji projektu: \texttt{docs/wyniki/epoki.csv} (dziennik $97$ epok), \texttt{docs/wyniki/test\_grupy.csv} (wyniki testu po grupach), \texttt{docs/WYNIKI.md}, \texttt{docs/GEN6.md}.
+\end{itemize}
+
+\section*{Polecenia}
+\begin{itemize}
+\item Zbudowanie książki: \texttt{bash build.sh .} w katalogu \texttt{ksiazka/} (generuje wykresy, składa PDF przez \texttt{latexmk}).
+\item Kontrola struktury: \texttt{python3 lint.py .} (każde twierdzenie ma dowód, każda definicja przykład, każdy rozdział co najmniej dwa rysunki i zadania).
+\item Kontrola liczb: \texttt{python3 weryfikacja.py} (kończy się błędem, jeśli jakaś liczba w tekście nie zgadza się z obliczeniem).
+\item Wymagane pakiety: \texttt{numpy}, \texttt{matplotlib}, \texttt{torch} (wersja CPU wystarcza), \texttt{texlive} z polskim, \texttt{sidenotes}, \texttt{tikz}.
+\end{itemize}
+
+\section*{Czego nie da się odtworzyć}
+Wytrenowania modelu od zera: wymaga ok.\ $70$~GB zrzutów cech i kilkunastu godzin na GPU (rozdział~\ref{rozdz:uczenie}); w repozytorium jest gotowy model, dziennik uczenia i skrypty. Dane GuitarSet i korpus MIDI trzeba pobrać osobno (skrypty \texttt{tools/gen6/fetch\_classical.py} i \texttt{make\_gen6.sh}).
+Nagrania użyte do rysunków (rozdziały~\ref{rozdz:alikwoty}, \ref{rozdz:hcqt}, \ref{rozdz:architektura}--\ref{rozdz:dekoder}) są \emph{syntetyczne} i generowane z ustalonym ziarnem (\texttt{tools/gen6/synth.py}); to nie są nagrania prawdziwej gitary.
