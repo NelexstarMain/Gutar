@@ -1,0 +1,41 @@
+\chapter{Skąd bierze się 249\,219 parametrów}\label{dod:parametry}
+
+Tabela rozpisuje każdy moduł prawdziwego, wytrenowanego modelu Gen~6 ($H=48$, $D=64$, $n_h=4$, $S=53$, $W=43$). Każdą liczbę da się policzyć ze wzorów: warstwa liniowa $n\to m$ ma $mn+m$ parametrów (rozdział~\ref{rozdz:wektory}),
+konwolucja $C_\mathrm{we}C_\mathrm{wy}k_tk_p+C_\mathrm{wy}$ (tw.~\ref{tw:param-konw}), LayerNorm $2\times$ wymiar. Sumy zostały porównane programem z liczbą parametrów modelu wczytanego z pliku \texttt{best.pt}.
+
+\begin{table}[ht]
+\centering\small
+\begin{tabular}{@{}p{5.4cm}p{3.7cm}r@{}}
+\toprule
+moduł & obliczenie & parametry\\
+\midrule
+trzon: konwolucja $3{\times}7$, $9\to48$ & $9\cdot48\cdot21+48$ & $9\,120$\\
+\emph{blok harmoniczny} ($\times3$): LN$(48)$ & $2\cdot48$ & $96$\\
+\quad konwolucja $1{\times}1$, $336\to48$ & $336\cdot48+48$ & $16\,176$\\
+\quad konwolucja głębokościowa $1{\times}5$ & $48\cdot5+48$ & $288$\\
+\quad konwolucja czasowa $3{\times}1$, $48\to48$ & $48\cdot48\cdot3+48$ & $6\,960$\\
+\quad suma bloku $\times3$ & $23\,520\cdot3$ & $70\,560$\\
+zejście: konwolucja $1{\times}3$, $48\to64$ & $48\cdot64\cdot3+64$ & $9\,280$\\
+osadzenie wysokości $e_s$ & $53\cdot64$ & $3\,392$\\
+\emph{warstwa kontekstu} ($\times2$): trzy LN & $3\cdot128$ & $384$\\
+\quad uwaga w czasie ($W_{QKV},W_O$, premie) & $12\,480+4160+4\cdot87$ & $16\,988$\\
+\quad uwaga między wysokościami & $12\,480+4160+4\cdot105$ & $17\,060$\\
+\quad FF: $64\to256\to64$ & $16\,640+16\,448$ & $33\,088$\\
+\quad suma warstwy $\times2$ & $67\,520\cdot2$ & $135\,040$\\
+LN końcowy & $2\cdot64$ & $128$\\
+głowica początku & $(64\cdot64+64)+(64+1)$ & $4\,225$\\
+głowica „brzmi” ($65$ wejść) & $(65\cdot64+64)+65$ & $4\,289$\\
+głowica końca & jak początku & $4\,225$\\
+głowica głośności (nieuczona) & jak początku & $4\,225$\\
+głowica tabulatury: $\vect w_i,c_i$; premie progów; MLP ciszy & $390+120+4\,225$ & $4\,735$\\
+\midrule
+\textbf{razem} & & $\mathbf{249\,219}$\\
+\bottomrule
+\end{tabular}
+\caption{Rozbicie liczby parametrów Gen~6 (zgodne z tw.~\ref{tw:liczba-parametrow}).}
+\label{tab:parametry-pelne}
+\end{table}
+
+\begin{przyklad}[Kontrola sumy]\label{prz:suma-kontrola}
+$9120+70\,560+9280+3392=92\,352$ (pierwsza połowa), $+\,135\,040$ (kontekst) $=227\,392$, $+\,128+4225+4289+4225+4225+4735=21\,827$ (głowice i LN), razem $249\,219$.
+\end{przyklad}
